@@ -1,0 +1,6 @@
+.git
+.gitignore
+.agent
+*.log
+.DS_Store
+Thumbs.db

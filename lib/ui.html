@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>File Browser</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0a0a0f;
+      --surface: #111118;
+      --border: #1e1e2e;
+      --accent: #7c6af7;
+      --accent2: #e879f9;
+      --text: #e2e2f0;
+      --muted: #6b6b8a;
+      --hover: #16161f;
+      --glow: rgba(124, 106, 247, 0.15);
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'JetBrains Mono', monospace;
+      min-height: 100vh;
+      padding: 0;
+      overflow-x: hidden;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.4;
+    }
+
+    .container {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 48px 24px 80px;
+      position: relative;
+      z-index: 1;
+    }
+
+    header { margin-bottom: 48px; }
+
+    .breadcrumb {
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .breadcrumb span { color: var(--accent); }
+    .breadcrumb a { color: var(--muted); text-decoration: none; cursor: pointer; transition: color 0.15s; }
+    .breadcrumb a:hover { color: var(--accent); }
+    .breadcrumb .bc-current { color: var(--text); }
+    .breadcrumb .bc-sep { color: var(--accent); margin: 0 2px; }
+
+    h1 {
+      font-family: 'Syne', sans-serif;
+      font-size: clamp(28px, 5vw, 42px);
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      line-height: 1;
+      background: linear-gradient(135deg, var(--text) 0%, var(--accent) 60%, var(--accent2) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 12px;
+    }
+
+    .subtitle { font-size: 12px; color: var(--muted); letter-spacing: 0.05em; }
+
+    .stats {
+      display: flex; gap: 24px; margin-bottom: 32px; padding: 14px 20px;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+      font-size: 11px; color: var(--muted); letter-spacing: 0.08em;
+    }
+    .stats strong { color: var(--accent); font-weight: 700; }
+
+    .toolbar { display: flex; gap: 10px; margin-bottom: 20px; align-items: center; }
+    .search-wrap { flex: 1; position: relative; }
+    .search-wrap svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 14px; height: 14px; color: var(--muted); }
+
+    input[type="search"] {
+      width: 100%; background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+      padding: 10px 12px 10px 36px; color: var(--text); font-family: 'JetBrains Mono', monospace;
+      font-size: 12px; outline: none; transition: border-color 0.2s;
+    }
+    input[type="search"]:focus { border-color: var(--accent); }
+    input[type="search"]::placeholder { color: var(--muted); }
+
+    .filter-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+    .filter-btn {
+      padding: 8px 14px; border-radius: 8px; border: 1px solid var(--border);
+      background: var(--surface); color: var(--muted); font-family: 'JetBrains Mono', monospace;
+      font-size: 11px; cursor: pointer; transition: all 0.15s; letter-spacing: 0.05em;
+    }
+    .filter-btn:hover { border-color: var(--accent); color: var(--text); }
+    .filter-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+    .file-list { display: flex; flex-direction: column; gap: 6px; }
+
+    .file-item {
+      display: flex; align-items: center; gap: 16px; padding: 14px 18px;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+      text-decoration: none; color: var(--text); transition: all 0.18s ease;
+      cursor: pointer; position: relative; overflow: hidden; animation: slideIn 0.3s ease both;
+    }
+    .file-item::before {
+      content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+      background: var(--accent); opacity: 0; transition: opacity 0.18s;
+    }
+    .file-item:hover { border-color: var(--accent); background: var(--hover); transform: translateX(3px); box-shadow: 0 0 24px var(--glow); }
+    .file-item:hover::before { opacity: 1; }
+
+    .file-item.is-folder { cursor: pointer; border-left: 3px solid transparent; }
+    .file-item.is-folder:hover { border-left-color: #f59e0b; }
+    .file-item.is-folder .folder-arrow { color: var(--muted); transition: transform 0.2s, color 0.2s; }
+    .file-item.is-folder:hover .folder-arrow { color: #fbbf24; transform: translateX(4px); }
+
+    @keyframes slideIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+    .file-icon { width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; }
+    .file-meta { flex: 1; min-width: 0; }
+    .file-name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 3px; letter-spacing: 0.02em; }
+    .file-info { font-size: 10px; color: var(--muted); letter-spacing: 0.06em; display: flex; gap: 12px; }
+    .file-ext { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 9px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
+
+    .dl-btn {
+      width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--border);
+      background: transparent; color: var(--muted); display: flex; align-items: center;
+      justify-content: center; cursor: pointer; transition: all 0.15s; flex-shrink: 0; text-decoration: none;
+    }
+    .dl-btn:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .dl-btn svg { width: 14px; height: 14px; }
+
+    .back-btn {
+      display: inline-flex; align-items: center; gap: 8px; padding: 8px 16px;
+      margin-bottom: 16px; border-radius: 8px; border: 1px solid var(--border);
+      background: var(--surface); color: var(--muted); font-family: 'JetBrains Mono', monospace;
+      font-size: 11px; cursor: pointer; transition: all 0.15s; letter-spacing: 0.05em;
+    }
+    .back-btn:hover { border-color: var(--accent); color: var(--text); background: var(--hover); }
+    .back-btn svg { width: 14px; height: 14px; }
+
+    .state-msg { text-align: center; padding: 64px 24px; color: var(--muted); font-size: 12px; letter-spacing: 0.08em; }
+    .state-msg .icon { font-size: 40px; margin-bottom: 16px; }
+
+    .loader { display: flex; justify-content: center; gap: 6px; padding: 64px; }
+    .loader span { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+    .loader span:nth-child(2) { animation-delay: 0.2s; }
+    .loader span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes pulse { 0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); } 40% { opacity: 1; transform: scale(1); } }
+
+    .ext-pdf { background: #ff443322; color: #ff6655; }
+    .ext-zip,.ext-rar,.ext-7z { background: #f59e0b22; color: #f59e0b; }
+    .ext-mp4,.ext-mkv,.ext-avi,.ext-mov { background: #8b5cf622; color: #a78bfa; }
+    .ext-mp3,.ext-wav,.ext-flac { background: #ec489922; color: #f472b6; }
+    .ext-jpg,.ext-jpeg,.ext-png,.ext-gif,.ext-webp,.ext-svg { background: #10b98122; color: #34d399; }
+    .ext-js,.ext-ts,.ext-jsx,.ext-tsx { background: #fbbf2422; color: #fcd34d; }
+    .ext-html,.ext-css { background: #f9731622; color: #fb923c; }
+    .ext-json,.ext-xml,.ext-yaml,.ext-yml { background: #06b6d422; color: #22d3ee; }
+    .ext-md,.ext-txt { background: #64748b22; color: #94a3b8; }
+    .ext-exe,.ext-dmg,.ext-deb,.ext-pkg { background: #ef444422; color: #f87171; }
+    .ext-default { background: #374151; color: #9ca3af; }
+
+    footer { text-align: center; margin-top: 48px; font-size: 10px; color: var(--muted); letter-spacing: 0.1em; opacity: 0.5; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div class="breadcrumb" id="breadcrumb">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>
+      <span class="bc-sep">/</span> <span class="bc-current">root</span>
+    </div>
+    <h1>File Browser</h1>
+    <p class="subtitle">// click file to download · click folder to open</p>
+  </header>
+
+  <div id="backBtn"></div>
+
+  <div class="stats" id="stats"><span>Loading...</span></div>
+
+  <div class="toolbar">
+    <div class="search-wrap">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      <input type="search" id="search" placeholder="Search files..." oninput="filterFiles()" />
+    </div>
+    <div class="filter-btns" id="filterBtns"></div>
+  </div>
+
+  <div id="fileList" class="file-list">
+    <div class="loader"><span></span><span></span><span></span></div>
+  </div>
+
+  <footer>BSERVE &nbsp;·&nbsp; BUILT WITH ♥</footer>
+</div>
+
+<script>
+  let allItems = [], allFiles = [], allDirs = [];
+  let activeFilter = 'all';
+  let currentPath = '/';
+
+  const iconMap = {
+    pdf: '📄', zip: '🗜️', rar: '🗜️', '7z': '🗜️',
+    mp4: '🎬', mkv: '🎬', avi: '🎬', mov: '🎬', webm: '🎬',
+    mp3: '🎵', wav: '🎵', flac: '🎵', ogg: '🎵',
+    jpg: '🖼️', jpeg: '🖼️', png: '🖼️', gif: '🖼️', webp: '🖼️', svg: '🖼️',
+    js: '⚡', ts: '⚡', jsx: '⚡', tsx: '⚡',
+    html: '🌐', css: '🎨',
+    json: '📋', xml: '📋', yaml: '📋', yml: '📋',
+    md: '📝', txt: '📝',
+    exe: '⚙️', dmg: '💿', deb: '📦', pkg: '📦',
+    py: '🐍', rb: '💎', go: '🔷', rs: '🦀', java: '☕',
+    default: '📁'
+  };
+
+  function navigateTo(path) {
+    currentPath = path;
+    activeFilter = 'all';
+    document.getElementById('search').value = '';
+    document.getElementById('fileList').innerHTML = '<div class="loader"><span></span><span></span><span></span></div>';
+    loadFiles(path);
+  }
+
+  function goBack() {
+    const parts = currentPath.replace(/\/$/, '').split('/').filter(Boolean);
+    parts.pop();
+    navigateTo('/' + (parts.length ? parts.join('/') + '/' : ''));
+  }
+
+  function updateBreadcrumb() {
+    const bc = document.getElementById('breadcrumb');
+    const homeSvg = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>';
+
+    if (currentPath === '/') {
+      bc.innerHTML = `${homeSvg} <span class="bc-sep">/</span> <span class="bc-current">root</span>`;
+    } else {
+      const parts = currentPath.replace(/\/$/, '').split('/').filter(Boolean);
+      let html = `<a onclick="navigateTo('/')">${homeSvg}</a> <span class="bc-sep">/</span>`;
+      parts.forEach((part, i) => {
+        const pathTo = '/' + parts.slice(0, i + 1).join('/') + '/';
+        html += i === parts.length - 1
+          ? ` <span class="bc-current">${part}</span>`
+          : ` <a onclick="navigateTo('${pathTo}')">${part}</a> <span class="bc-sep">/</span>`;
+      });
+      bc.innerHTML = html;
+    }
+
+    const backContainer = document.getElementById('backBtn');
+    backContainer.innerHTML = currentPath !== '/'
+      ? `<button class="back-btn" onclick="goBack()">
+           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5"/><polyline points="12 19 5 12 12 5"/></svg>
+           back
+         </button>`
+      : '';
+  }
+
+  async function loadFiles(path) {
+    path = path || currentPath;
+    try {
+      const res = await fetch('/__api/list?path=' + encodeURIComponent(path));
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+
+      // API returns { items: [{name, isDir, size, mtime}] } — already sorted
+      const items = (data.items || []).filter(f => f.name !== '..' && !f.name.startsWith('.'));
+
+      allDirs = items.filter(f => f.isDir);
+      allFiles = items.filter(f => !f.isDir);
+      allItems = [...allDirs, ...allFiles];
+
+      updateBreadcrumb();
+      buildFilterButtons();
+      renderItems(allItems);
+      updateStats(allFiles, allDirs);
+    } catch (err) {
+      document.getElementById('fileList').innerHTML = `
+        <div class="state-msg">
+          <div class="icon">⚠️</div>
+          <p>Could not read directory.</p>
+          <p style="margin-top:8px;font-size:10px;opacity:0.6">${err.message}</p>
+        </div>`;
+      document.getElementById('stats').innerHTML = '<span>Error</span>';
+      updateBreadcrumb();
+    }
+  }
+
+  function getExt(name) {
+    const parts = name.split('.');
+    return parts.length > 1 ? parts.pop().toLowerCase() : '';
+  }
+
+  function formatSize(bytes) {
+    if (typeof bytes !== 'number' || bytes === 0) return '—';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let i = 0, v = bytes;
+    while (v >= 1024 && i < 4) { v /= 1024; i++; }
+    return `${v.toFixed(i > 0 ? 1 : 0)} ${units[i]}`;
+  }
+
+  function buildFilterButtons() {
+    const exts = [...new Set(allFiles.map(f => getExt(f.name)).filter(Boolean))];
+    const container = document.getElementById('filterBtns');
+    container.innerHTML = '';
+
+    const allBtn = document.createElement('button');
+    allBtn.className = 'filter-btn active';
+    allBtn.textContent = 'all';
+    allBtn.dataset.ext = 'all';
+    allBtn.onclick = () => setFilter('all');
+    container.appendChild(allBtn);
+
+    if (allDirs.length > 0) {
+      const folderBtn = document.createElement('button');
+      folderBtn.className = 'filter-btn';
+      folderBtn.textContent = '📂 folders';
+      folderBtn.dataset.ext = 'folder';
+      folderBtn.onclick = () => setFilter('folder');
+      container.appendChild(folderBtn);
+    }
+
+    exts.slice(0, 5).forEach(ext => {
+      const btn = document.createElement('button');
+      btn.className = 'filter-btn';
+      btn.textContent = ext;
+      btn.dataset.ext = ext;
+      btn.onclick = () => setFilter(ext);
+      container.appendChild(btn);
+    });
+  }
+
+  function setFilter(ext) {
+    activeFilter = ext;
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.toggle('active', b.dataset.ext === ext));
+    filterFiles();
+  }
+
+  function filterFiles() {
+    const q = document.getElementById('search').value.toLowerCase();
+    let filtered;
+    if (activeFilter === 'folder') {
+      filtered = allDirs.filter(f => f.name.toLowerCase().includes(q));
+    } else if (activeFilter === 'all') {
+      filtered = allItems.filter(f => f.name.toLowerCase().includes(q));
+    } else {
+      filtered = allFiles.filter(f => f.name.toLowerCase().includes(q) && getExt(f.name) === activeFilter);
+    }
+    renderItems(filtered);
+  }
+
+  function renderItems(items) {
+    const container = document.getElementById('fileList');
+    if (items.length === 0) {
+      container.innerHTML = '<div class="state-msg"><div class="icon">🔍</div><p>No files found.</p></div>';
+      return;
+    }
+
+    container.innerHTML = items.map((f, i) => {
+      if (f.isDir) {
+        const dirPath = currentPath + f.name + '/';
+        return `
+          <div class="file-item is-folder" onclick="navigateTo('${dirPath.replace(/'/g, "\\'")}')" style="animation-delay:${i * 0.04}s">
+            <span class="file-icon" style="background:#f59e0b18;color:#fbbf24;font-size:18px">📂</span>
+            <div class="file-meta">
+              <div class="file-name">${f.name}</div>
+              <div class="file-info"><span style="color:#fbbf24">folder</span></div>
+            </div>
+            <span class="folder-arrow">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+            </span>
+          </div>`;
+      } else {
+        const ext = getExt(f.name);
+        const icon = iconMap[ext] || iconMap.default;
+        const extClass = ext ? `ext-${ext}` : 'ext-default';
+        const size = formatSize(f.size);
+        // Build file URL relative to server root
+        const filePath = currentPath === '/' ? '/' + encodeURIComponent(f.name) : currentPath + encodeURIComponent(f.name);
+
+        return `
+          <div class="file-item" style="animation-delay:${i * 0.04}s" onclick="window.location.href='${filePath}'">
+            <span class="file-icon ${extClass}">${icon}</span>
+            <div class="file-meta">
+              <div class="file-name">${f.name}</div>
+              <div class="file-info">
+                ${ext ? `<span class="file-ext ${extClass}">${ext}</span>` : ''}
+                <span>${size}</span>
+              </div>
+            </div>
+            <a class="dl-btn" href="${filePath}" download="${f.name}" title="Download" onclick="event.stopPropagation()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+            </a>
+          </div>`;
+      }
+    }).join('');
+  }
+
+  function updateStats(files, dirs) {
+    const total = files.length;
+    const totalSize = files.reduce((s, f) => s + (f.size || 0), 0);
+    const exts = new Set(files.map(f => getExt(f.name)).filter(Boolean));
+    const dirCount = dirs.length;
+    document.getElementById('stats').innerHTML = `
+      ${dirCount > 0 ? `<span><strong>${dirCount}</strong> folders</span>` : ''}
+      <span><strong>${total}</strong> files</span>
+      <span><strong>${formatSize(totalSize)}</strong> total</span>
+      <span><strong>${exts.size}</strong> types</span>`;
+  }
+
+  loadFiles('/');
+</script>
+</body>
+</html>

@@ -1,0 +1,38 @@
+{
+  "name": "bserve",
+  "version": "1.0.0",
+  "description": "Static file server with a beautiful built-in file browser UI",
+  "bin": {
+    "bserve": "./bin/index.js"
+  },
+  "files": [
+    "bin/",
+    "lib/",
+    "LICENSE",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ptn1411/bserve.git"
+  },
+  "homepage": "https://github.com/ptn1411/bserve#readme",
+  "bugs": {
+    "url": "https://github.com/ptn1411/bserve/issues"
+  },
+  "author": "ptn1411",
+  "license": "MIT",
+  "keywords": [
+    "serve",
+    "static",
+    "file-browser",
+    "file-server",
+    "directory-listing",
+    "cli"
+  ],
+  "engines": {
+    "node": ">=16"
+  },
+  "dependencies": {
+    "serve-handler": "^6.1.6"
+  }
+}
