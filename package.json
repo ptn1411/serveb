@@ -1,9 +1,9 @@
 {
-  "name": "bserve",
+  "name": "serveb",
   "version": "1.0.0",
   "description": "Static file server with a beautiful built-in file browser UI",
   "bin": {
-    "bserve": "./bin/index.js"
+    "serveb": "./bin/index.js"
   },
   "files": [
     "bin/",
@@ -13,11 +13,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ptn1411/bserve.git"
+    "url": "git+https://github.com/ptn1411/serveb.git"
   },
-  "homepage": "https://github.com/ptn1411/bserve#readme",
+  "homepage": "https://github.com/ptn1411/serveb#readme",
   "bugs": {
-    "url": "https://github.com/ptn1411/bserve/issues"
+    "url": "https://github.com/ptn1411/serveb/issues"
   },
   "author": "ptn1411",
   "license": "MIT",

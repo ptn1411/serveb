@@ -1,10 +1,10 @@
-# bserve
+# serveb
 
 > Static file server with a beautiful built-in file browser UI.
 
 A lightweight CLI tool that serves any directory with a modern, dark-themed file browser interface. Built on top of [`serve-handler`](https://github.com/vercel/serve-handler).
 
-![bserve](https://img.shields.io/npm/v/bserve?style=flat-square&color=7c6af7)
+![serveb](https://img.shields.io/npm/v/serveb?style=flat-square&color=7c6af7)
 
 ## Features
 
@@ -14,28 +14,28 @@ A lightweight CLI tool that serves any directory with a modern, dark-themed file
 - 🔍 **Search & filter** — Filter by file type (mp4, txt, etc.)
 - 📊 **Stats bar** — See folder count, file count, total size at a glance
 - 🔄 **Auto port** — If port is in use, automatically tries the next one
-- ⚡ **Zero config** — Just run `bserve` in any directory
+- ⚡ **Zero config** — Just run `serveb` in any directory
 
 ## Install
 
 ```bash
-npm install -g bserve
+npm install -g serveb
 ```
 
 ## Usage
 
 ```bash
 # Serve current directory
-bserve
+serveb
 
 # Serve a specific directory
-bserve ./my-files
+serveb ./my-files
 
 # Use a custom port
-bserve -p 8080
+serveb -p 8080
 
 # Combine options
-bserve ./dist --port 5000
+serveb ./dist --port 5000
 ```
 
 Then open `http://localhost:3000/` in your browser.
@@ -50,7 +50,7 @@ Then open `http://localhost:3000/` in your browser.
 
 ## How it works
 
-`bserve` creates a simple HTTP server with three routes:
+`serveb` creates a simple HTTP server with three routes:
 
 | Route | Purpose |
 |-------|---------|

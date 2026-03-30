@@ -19,9 +19,9 @@ for (let i = 0; i < args.length; i++) {
     i++;
   } else if (args[i] === "--help" || args[i] === "-h") {
     console.log(`
-  bserve - Static file server with built-in browser UI
+  serveb - Static file server with built-in browser UI
 
-  Usage: bserve [directory] [options]
+  Usage: serveb [directory] [options]
 
   Options:
     -p, --port <port>   Port to listen on (default: 3000)
@@ -29,10 +29,10 @@ for (let i = 0; i < args.length; i++) {
     -h, --help          Show this help
 
   Examples:
-    bserve                    # Serve current directory
-    bserve ./my-files         # Serve specific directory
-    bserve -p 8080            # Use custom port
-    bserve ./dist --port 5000 # Both options
+    serveb                    # Serve current directory
+    serveb ./my-files         # Serve specific directory
+    serveb -p 8080            # Use custom port
+    serveb ./dist --port 5000 # Both options
 `);
     process.exit(0);
   } else if (!args[i].startsWith("-")) {
@@ -142,7 +142,7 @@ function startServer(tryPort) {
     console.log();
     console.log(`  ┌${line}┐`);
     console.log(`  │${"".padStart(boxWidth)}│`);
-    console.log(`  │${"  bserve".padEnd(boxWidth)}│`);
+    console.log(`  │${"  serveb".padEnd(boxWidth)}│`);
     console.log(`  │${"".padStart(boxWidth)}│`);
     console.log(`  │${"  Serving:".padEnd(boxWidth)}│`);
     console.log(`  │${"  " + directory.padEnd(boxWidth - 2)}│`);
