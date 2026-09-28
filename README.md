@@ -1,62 +1,94 @@
-# serveb
+# namsv
 
-> Static file server with a beautiful built-in file browser UI.
+> Ứng dụng desktop làm **cầu nối file** trong mạng LAN — chạy ngầm ở khay hệ thống, có nút Start/Stop và tự khởi động cùng Windows.
 
-A lightweight CLI tool that serves any directory with a modern, dark-themed file browser interface. Built on top of [`serve-handler`](https://github.com/vercel/serve-handler).
+Chọn một thư mục trên máy, bật server, rồi bất kỳ thiết bị nào cùng mạng (điện thoại, laptop khác…) mở địa chỉ LAN để **duyệt, xem và tải file** qua một giao diện web tối giản, đẹp. Toàn bộ server viết bằng **Rust (axum)**, đóng gói trong **Tauri v2** — 1 file `.exe` nhẹ, không cần cài Node.
 
-![serveb](https://img.shields.io/npm/v/serveb?style=flat-square&color=7c6af7)
+## Tính năng
 
-## Features
+- 🖥️ **Icon khay hệ thống** — menu Bật/Tắt server, mở trình duyệt, thoát
+- ▶️ **Bảng điều khiển** — chọn thư mục, đổi cổng, xem địa chỉ LAN, nút Start/Stop
+- 🚀 **Tự khởi động cùng Windows** — chạy ngầm ở khay khi bật máy
+- 🌙 **UI trình duyệt** — duyệt thư mục, tìm kiếm, lọc theo loại file, tải xuống
+- 🎬 **Xem trực tiếp** — hỗ trợ HTTP range nên video stream/tua được ngay trong trình duyệt
+- 📂 **Nhiều thư mục công khai** — thêm thư mục ở tab *Công khai*; điện thoại chọn qua lại ngay trên đầu trang. Mỗi thư mục (kể cả thư mục chính) có 3 mức quyền: *Chỉ xem* · *Tải lên* (thêm file, tạo thư mục) · *Toàn quyền* (thêm đổi tên, xóa). Áp dụng ngay, không cần khởi động lại server
+- ✏️ **Quản lý file từ điện thoại** — nút ⋯ trên mỗi dòng: xem, tải về, chia sẻ, đổi tên, xóa. Xóa là **chuyển vào Thùng rác Windows** nên khôi phục được
+- ▦ **Mã QR** — QR cho địa chỉ LAN (iPhone quét bằng Camera là vào) và cho từng link chia sẻ
+- 🔑 **Giữ đăng nhập 30 ngày** — mỗi thiết bị một phiên, không bị đăng xuất khi đổi thư mục/cổng hay tắt-bật server; có nút *Đăng xuất* trên web và danh sách *Thiết bị đã đăng nhập* trong app để đăng xuất từng máy. Đổi mã PIN sẽ đăng xuất tất cả
+- 🔗 **Link chia sẻ tạm thời** — cho 1 file hoặc 1 thư mục, có thời hạn (1 giờ → 30 ngày) và mật khẩu 4 số. Người nhận chỉ xem & tải về. Nhập sai 5 lần thì link tự khóa (mở khóa lại được trong app)
+- 🚫 **Chống dò mã PIN** — sai 5 lần trên một thiết bị thì thiết bị đó bị khóa 5 phút; sai tổng cộng 20 lần (mọi thiết bị) thì khóa đăng nhập tất cả 15 phút; mỗi lần khóa lại tăng gấp đôi (tối đa 24 giờ). Khi đang khóa, nhập đúng PIN cũng không vào được. Người đã đăng nhập vẫn dùng bình thường; mở khóa được ngay trong app
+- 📜 **Nhật ký** — ghi lại đăng nhập, tải lên, tạo/xóa/mở link, tải qua link (kèm IP)
+- 🗄️ **Cơ sở dữ liệu SQLite** — thư mục công khai, link và nhật ký lưu trong `namsv.db` (nhúng sẵn, không cần cài gì)
+- 🔒 **Chống path traversal** — chỉ phục vụ trong đúng thư mục đã chọn
+- 🪶 **Nhẹ** — dùng WebView2 sẵn có của Windows, không nhúng Chromium
 
-- 📂 **Beautiful UI** — Dark-themed file browser with icons, filters, and search
-- 🗂️ **Directory navigation** — Click folders to browse, breadcrumbs to jump back
-- ⬇️ **File downloads** — Click any file to download
-- 🔍 **Search & filter** — Filter by file type (mp4, txt, etc.)
-- 📊 **Stats bar** — See folder count, file count, total size at a glance
-- 🔄 **Auto port** — If port is in use, automatically tries the next one
-- ⚡ **Zero config** — Just run `serveb` in any directory
+## Cấu trúc dự án
 
-## Install
-
-```bash
-npm install -g serveb
+```
+namsv/
+├── ui/
+│   └── index.html          # Bảng điều khiển (giao diện cửa sổ Tauri)
+├── src-tauri/
+│   ├── assets/
+│   │   └── browser.html     # UI trình duyệt file (server nhúng & phục vụ)
+│   ├── icons/               # Icon app (sinh bằng `tauri icon`)
+│   ├── src/
+│   │   ├── main.rs          # Tray, menu, commands, autostart, config
+│   │   ├── db.rs            # SQLite: thư mục công khai, link chia sẻ, nhật ký
+│   │   └── server.rs        # File server bằng axum (list API, tải file, link chia sẻ)
+│   ├── Cargo.toml
+│   ├── build.rs
+│   └── tauri.conf.json
+└── package.json             # Script tiện lợi (tuỳ chọn)
 ```
 
-## Usage
+## Yêu cầu
+
+- [Rust](https://rustup.rs/) (toolchain MSVC trên Windows)
+- WebView2 (đã có sẵn trên Windows 10/11)
+- Tauri CLI: `cargo install tauri-cli` *hoặc* `npm i` (đã khai báo trong `devDependencies`)
+
+## Phát triển & đóng gói
 
 ```bash
-# Serve current directory
-serveb
+# Chạy thử (hot-reload cửa sổ điều khiển)
+cargo tauri dev
 
-# Serve a specific directory
-serveb ./my-files
-
-# Use a custom port
-serveb -p 8080
-
-# Combine options
-serveb ./dist --port 5000
+# Đóng gói ra installer .exe (NSIS)
+cargo tauri build
 ```
 
-Then open `http://localhost:3000/` in your browser.
+Installer nằm ở `src-tauri/target/release/bundle/nsis/`.
 
-## Options
+## Cách hoạt động
 
-| Flag | Description | Default |
-|------|-------------|---------|
-| `-p, --port <port>` | Port to listen on | `3000` |
-| `-l <port>` | Alias for `--port` | `3000` |
-| `-h, --help` | Show help | — |
+Server Rust mở HTTP trên `0.0.0.0:<port>`. `root=0` là thư mục chính, các số khác là thư mục công khai trong database.
 
-## How it works
+| Tuyến | Chức năng |
+|-------|-----------|
+| `/` | Trả về UI trình duyệt file (nhúng sẵn) |
+| `/__api/roots` | Danh sách thư mục điện thoại được chọn |
+| `/__api/list?root=0&path=/` | API JSON liệt kê thư mục |
+| `/__f/<root>/<đường dẫn>` | Tải/stream file (hỗ trợ range) |
+| `PUT /__api/upload?root=&path=&name=` | Tải file lên (quyền *Tải lên* trở lên) |
+| `POST /__api/mkdir` · `/__api/rename` · `/__api/delete` | Tạo thư mục (*Tải lên*) · đổi tên, xóa vào Thùng rác (*Toàn quyền*) |
+| `POST /__api/logout` | Đăng xuất thiết bị hiện tại |
+| `/__api/qr?text=` | Ảnh QR (SVG) |
+| `/__api/links` | Tạo (`POST`) / liệt kê (`GET`) / xóa (`DELETE /__api/links/<id>`) link chia sẻ |
+| `/s/<mã>` | Trang link chia sẻ — **không** cần PIN chung, chỉ cần mật khẩu riêng của link |
+| `/*` | Tải file trong thư mục chính (giữ tương thích link cũ) |
 
-`serveb` creates a simple HTTP server with three routes:
+Mọi tuyến trừ `/s/…` đều nằm sau mã PIN đăng nhập (nếu bật). Cookie của link chia sẻ chỉ có hiệu lực trong đúng link đó.
 
-| Route | Purpose |
-|-------|---------|
-| `/` | Serves the built-in file browser UI |
-| `/__api/list?path=/` | JSON API for directory listings |
-| `/*` | File downloads (powered by `serve-handler`) |
+Cấu hình (thư mục, cổng, tuỳ chọn) lưu trong `config.json`; thư mục công khai, link và nhật ký lưu trong `namsv.db` — cả hai nằm trong thư mục config của app (`%APPDATA%\com.ptn1411.namsv\`). Link hết hạn quá 7 ngày được tự dọn khi mở app; nhật ký giữ 2000 dòng gần nhất.
+
+```bash
+# Chạy test (database + các tuyến HTTP)
+cd src-tauri && cargo test
+
+# Kiểm tra thật việc chuyển vào Thùng rác (có đụng tới Thùng rác của máy, tự dọn lại)
+cd src-tauri && cargo test trash_really_recycles -- --ignored
+```
 
 ## License
 

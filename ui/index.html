@@ -1,0 +1,970 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>namsv</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0a0a0f;
+      --surface: #111118;
+      --border: #1e1e2e;
+      --accent: #7c6af7;
+      --accent2: #e879f9;
+      --text: #e2e2f0;
+      --muted: #6b6b8a;
+      --hover: #16161f;
+      --ok: #34d399;
+      --off: #6b6b8a;
+      --danger: #f87171;
+    }
+    html, body { height: 100%; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: ui-monospace, 'JetBrains Mono', 'Cascadia Code', monospace;
+      padding: 18px;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .app { display: flex; flex-direction: column; gap: 16px; }
+
+    header { display: flex; align-items: center; gap: 12px; }
+    .logo {
+      width: 40px; height: 40px; border-radius: 11px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      display: grid; place-items: center;
+      font-family: 'Syne', sans-serif; font-weight: 800; font-size: 20px; color: #fff;
+      box-shadow: 0 6px 20px rgba(124,106,247,.35);
+    }
+    .title { font-size: 18px; font-weight: 700; letter-spacing: .5px; }
+    .subtitle { font-size: 10px; color: var(--muted); margin-top: 2px; }
+
+    .status-pill {
+      margin-left: auto; display: inline-flex; align-items: center; gap: 7px;
+      font-size: 11px; font-weight: 600; padding: 6px 11px; border-radius: 999px;
+      border: 1px solid var(--border); background: var(--surface);
+    }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--off); }
+    .status-pill.on .dot { background: var(--ok); box-shadow: 0 0 10px var(--ok); }
+    .status-pill.on { color: var(--ok); border-color: rgba(52,211,153,.3); }
+
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 14px; padding: 14px;
+    }
+    .label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin-bottom: 8px; }
+
+    .row { display: flex; gap: 8px; align-items: center; }
+    .path {
+      flex: 1; min-width: 0; font-size: 12px; color: var(--text);
+      background: var(--bg); border: 1px solid var(--border); border-radius: 9px;
+      padding: 9px 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      direction: rtl; text-align: left;
+    }
+    input.port {
+      width: 92px; font-family: inherit; font-size: 13px; color: var(--text);
+      background: var(--bg); border: 1px solid var(--border); border-radius: 9px;
+      padding: 9px 11px; text-align: center;
+    }
+    input.port:focus { outline: none; border-color: var(--accent); }
+
+    button {
+      font-family: inherit; cursor: pointer; border: none; color: var(--text);
+      background: var(--hover); border: 1px solid var(--border);
+      border-radius: 9px; padding: 9px 13px; font-size: 12px; font-weight: 600;
+      transition: .15s;
+    }
+    button:hover { border-color: var(--accent); color: #fff; }
+    button:active { transform: translateY(1px); }
+
+    .btn-main {
+      width: 100%; padding: 14px; font-size: 14px; font-weight: 700; border: none;
+      background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff;
+      box-shadow: 0 8px 24px rgba(124,106,247,.35);
+    }
+    .btn-main.stop { background: linear-gradient(135deg, #3a2033, #4a1f2f); box-shadow: none; color: #ffd7e0; border: 1px solid #5a2a3a; }
+
+    .urls { display: flex; flex-direction: column; gap: 8px; }
+    .url-item { display: flex; align-items: center; gap: 8px; }
+    .url-wrap { flex: 1; min-width: 0; }
+    .url-label { font-size: 9px; text-transform: uppercase; letter-spacing: .6px; color: var(--accent2); margin: 0 0 3px 2px; font-weight: 600; }
+    .url {
+      font-size: 12px; color: var(--accent);
+      background: var(--bg); border: 1px solid var(--border); border-radius: 9px;
+      padding: 9px 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .icon-btn { padding: 9px 10px; }
+    .urls.disabled { opacity: .4; pointer-events: none; }
+
+    .dir-actions { display: flex; gap: 8px; margin-top: 10px; }
+    .dir-actions button { flex: 1; font-size: 11px; padding: 8px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+    .dir-actions button.active { border-color: var(--accent); color: #fff; background: rgba(124,106,247,.15); }
+    .folder-list { display: flex; flex-direction: column; gap: 6px; max-height: 168px; overflow-y: auto; }
+    .folder-row {
+      display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 9px;
+      background: var(--bg); border: 1px solid var(--border); cursor: pointer; transition: .15s;
+    }
+    .folder-row:hover { border-color: var(--accent); }
+    .folder-row.current { border-color: var(--accent); background: rgba(124,106,247,.12); }
+    .folder-row .fi { font-size: 15px; flex: none; }
+    .folder-row .fmeta { flex: 1; min-width: 0; }
+    .folder-row .fname { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 6px; }
+    .folder-row .fpath { font-size: 9px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; direction: rtl; text-align: left; }
+    .folder-row .fx { flex: none; color: var(--muted); font-size: 14px; padding: 2px 5px; border-radius: 6px; }
+    .folder-row .fx:hover { color: var(--danger); background: var(--hover); }
+    .lock-warn {
+      display: flex; align-items: center; gap: 10px; margin-top: 10px; padding: 9px 10px;
+      border-radius: 9px; border: 1px solid rgba(248,113,113,.4); background: rgba(248,113,113,.08);
+      font-size: 11px; line-height: 1.6; color: #fecaca;
+    }
+    .lock-warn[hidden] { display: none; }
+
+    /* QR overlay */
+    .overlay {
+      position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 18px;
+      background: rgba(6,6,10,.82); backdrop-filter: blur(4px);
+    }
+    .overlay[hidden] { display: none; }
+    .qr-card {
+      width: 100%; max-width: 320px; background: var(--surface); border: 1px solid var(--border);
+      border-radius: 16px; padding: 16px; box-shadow: 0 30px 70px rgba(0,0,0,.6);
+    }
+    .qr-img { display: flex; justify-content: center; }
+    .qr-img svg { width: 230px; height: 230px; border-radius: 12px; }
+    .qr-img.small svg { width: 150px; height: 150px; border-radius: 10px; }
+    .qr-text { margin-top: 10px; font-size: 11px; color: var(--accent); text-align: center; word-break: break-all; user-select: text; -webkit-user-select: text; }
+
+    /* permission picker + logged-in devices */
+    .pub-perm { flex: none; padding: 5px 7px; font-size: 10px; }
+    .sess-row { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 9px; background: var(--bg); border: 1px solid var(--border); }
+    .sess-row .fi { font-size: 15px; flex: none; }
+    .sess-row .fmeta { flex: 1; min-width: 0; }
+    .sess-row .fname { font-size: 12px; }
+    .sess-sub { font-size: 9px; color: var(--muted); margin-top: 2px; }
+    .sess-row .fx { flex: none; color: var(--muted); font-size: 14px; padding: 2px 5px; border-radius: 6px; cursor: pointer; }
+    .sess-row .fx:hover { color: var(--danger); background: var(--hover); }
+    .lock-warn > div { flex: 1; min-width: 0; word-break: break-word; }
+    .pub-row .fi { font-size: 15px; flex: none; }
+    .pub-row .fx { flex: none; color: var(--muted); font-size: 14px; padding: 2px 5px; border-radius: 6px; cursor: pointer; }
+    .pub-row .fx:hover { color: var(--danger); background: var(--hover); }
+    .badge { font-size: 8px; letter-spacing: .5px; color: var(--accent); border: 1px solid var(--accent); border-radius: 5px; padding: 1px 5px; flex: none; }
+    .empty-hint { font-size: 10px; color: var(--muted); padding: 4px 2px; }
+    .card .label.inline { display: flex; align-items: center; justify-content: space-between; }
+    .pin-input {
+      flex: 1; font-family: inherit; font-size: 18px; letter-spacing: 8px; text-align: center;
+      color: var(--text); background: var(--bg); border: 1px solid var(--border);
+      border-radius: 9px; padding: 9px 11px;
+    }
+    .pin-input:focus { outline: none; border-color: var(--accent); }
+    .pin-input::-webkit-outer-spin-button, .pin-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+    .toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 4px 0; }
+    .toggle-row + .toggle-row { border-top: 1px solid var(--border); }
+    .toggle-label { font-size: 12px; }
+    .toggle-desc { font-size: 10px; color: var(--muted); margin-top: 2px; }
+    .switch { position: relative; width: 42px; height: 24px; flex: none; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute; inset: 0; cursor: pointer; background: var(--border);
+      border-radius: 999px; transition: .2s;
+    }
+    .slider::before {
+      content: ""; position: absolute; height: 18px; width: 18px; left: 3px; top: 3px;
+      background: #fff; border-radius: 50%; transition: .2s;
+    }
+    .switch input:checked + .slider { background: linear-gradient(135deg, var(--accent), var(--accent2)); }
+    .switch input:checked + .slider::before { transform: translateX(18px); }
+
+    .foot { font-size: 10px; color: var(--muted); text-align: center; line-height: 1.6; }
+    .toast {
+      position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%) translateY(20px);
+      background: var(--accent); color: #fff; font-size: 11px; font-weight: 600;
+      padding: 8px 16px; border-radius: 999px; opacity: 0; transition: .25s; pointer-events: none;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    /* ---- Tabs ---- */
+    .tabs {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; padding: 4px;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+      position: sticky; top: 0; z-index: 5;
+    }
+    .tabs button { border: 1px solid transparent; background: transparent; padding: 8px 4px; font-size: 11px; color: var(--muted); }
+    .tabs button.active { background: rgba(124,106,247,.18); border-color: var(--accent); color: #fff; }
+    .tab { display: flex; flex-direction: column; gap: 16px; }
+    .tab[hidden] { display: none; }
+    .count { font-size: 9px; background: var(--accent); color: #fff; border-radius: 999px; padding: 1px 6px; margin-left: 3px; }
+
+    .hint { font-size: 10px; color: var(--muted); line-height: 1.6; margin-bottom: 10px; }
+    .wide { width: 100%; margin-top: 10px; }
+    .mini { padding: 4px 9px; font-size: 10px; font-weight: 600; text-transform: none; letter-spacing: 0; }
+    .danger:hover { border-color: var(--danger); color: var(--danger); }
+
+    /* public folders */
+    .pub-row { display: flex; flex-direction: column; gap: 6px; padding: 9px 10px; border-radius: 9px; background: var(--bg); border: 1px solid var(--border); }
+    .pub-row.main { border-style: dashed; }
+    .pub-row.missing { border-color: rgba(248,113,113,.5); }
+    .pub-top { display: flex; align-items: center; gap: 8px; }
+    .pub-name {
+      flex: 1; min-width: 0; font-family: inherit; font-size: 12px; color: var(--text);
+      background: transparent; border: 1px solid transparent; border-radius: 7px; padding: 5px 7px;
+    }
+    .pub-name:hover { border-color: var(--border); }
+    .pub-name:focus { outline: none; border-color: var(--accent); background: var(--surface); }
+    .pub-path { font-size: 9px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; direction: rtl; text-align: left; padding-left: 30px; }
+
+    /* links */
+    .seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+    .seg button { padding: 7px 4px; font-size: 11px; }
+    .seg button.active { border-color: var(--accent); color: #fff; background: rgba(124,106,247,.18); }
+    select {
+      font-family: inherit; font-size: 11px; color: var(--text); background: var(--bg);
+      border: 1px solid var(--border); border-radius: 9px; padding: 7px 9px; min-width: 0;
+    }
+    select:focus { outline: none; border-color: var(--accent); }
+    .lk-row { padding: 9px 10px; border-radius: 9px; background: var(--bg); border: 1px solid var(--border); }
+    .lk-row.dead { opacity: .5; }
+    .lk-top { display: flex; align-items: center; gap: 8px; }
+    .lk-name { flex: 1; min-width: 0; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .lk-meta { font-size: 10px; color: var(--muted); margin-top: 5px; line-height: 1.6; padding-left: 24px; }
+    .lk-meta b { color: var(--accent2); letter-spacing: 2px; }
+    .lk-meta .warn { color: var(--danger); }
+    .lk-top button { padding: 5px 8px; font-size: 11px; }
+    .result {
+      margin-top: 10px; padding: 10px; border-radius: 9px; border: 1px solid rgba(52,211,153,.35);
+      background: rgba(52,211,153,.06); font-size: 11px; line-height: 1.7; user-select: text; -webkit-user-select: text;
+    }
+    .result .u { color: var(--accent); word-break: break-all; }
+
+    /* log */
+    .log-list { display: flex; flex-direction: column; max-height: 470px; overflow-y: auto; }
+    .log-row { display: flex; gap: 9px; padding: 7px 2px; border-bottom: 1px solid var(--border); font-size: 11px; }
+    .log-row:last-child { border-bottom: none; }
+    .log-ic { flex: none; width: 18px; text-align: center; }
+    .log-main { flex: 1; min-width: 0; }
+    .log-what { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .log-what span { color: var(--muted); }
+    .log-sub { font-size: 9px; color: var(--muted); margin-top: 2px; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div class="logo">n</div>
+      <div>
+        <div class="title">namsv</div>
+        <div class="subtitle">// local file bridge</div>
+      </div>
+      <div class="status-pill" id="pill"><span class="dot"></span><span id="pillText">…</span></div>
+    </header>
+
+    <nav class="tabs" id="tabs">
+      <button data-tab="server" class="active">⚡ Server</button>
+      <button data-tab="folders">📂 Công khai</button>
+      <button data-tab="links">🔗 Link<span class="count" id="linkCount" hidden></span></button>
+      <button data-tab="logs">📜 Nhật ký</button>
+    </nav>
+
+    <section class="tab" id="tab-server">
+    <div class="card">
+      <div class="label">Thư mục chia sẻ</div>
+      <div class="row">
+        <div class="path" id="dir" title="">—</div>
+        <button id="pickBtn">Chọn…</button>
+      </div>
+      <div class="dir-actions">
+        <button id="favBtn" title="Thêm/bỏ yêu thích">☆ Yêu thích</button>
+        <button id="defBtn" title="Đặt làm thư mục mặc định khi khởi động">📌 Mặc định</button>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <div class="label" style="margin:0 auto 0 2px">Cổng</div>
+        <input class="port" id="port" type="number" min="1" max="65535" value="3000" />
+      </div>
+    </div>
+
+    <div class="card" id="favCard" style="display:none">
+      <div class="label">⭐ Yêu thích</div>
+      <div class="folder-list" id="favList"></div>
+    </div>
+
+    <div class="card" id="recentCard" style="display:none">
+      <div class="label inline"><span>🕘 Gần đây</span></div>
+      <div class="folder-list" id="recentList"></div>
+    </div>
+
+    <button class="btn-main" id="toggleBtn">Khởi động server</button>
+
+    <div class="card">
+      <div class="label inline">
+        <span>Địa chỉ truy cập</span>
+        <button class="mini" id="qrPhone" title="Quét bằng camera iPhone để mở ngay">▦ QR cho điện thoại</button>
+      </div>
+      <div class="urls" id="urls"></div>
+    </div>
+
+    <div class="card">
+      <div class="toggle-row">
+        <div>
+          <div class="toggle-label">Tự chạy server khi mở app</div>
+          <div class="toggle-desc">Bật server ngay khi namsv khởi động</div>
+        </div>
+        <label class="switch"><input type="checkbox" id="sol" /><span class="slider"></span></label>
+      </div>
+      <div class="toggle-row">
+        <div>
+          <div class="toggle-label">Khởi động cùng Windows</div>
+          <div class="toggle-desc">Chạy ngầm ở khay khi bật máy</div>
+        </div>
+        <label class="switch"><input type="checkbox" id="autostart" /><span class="slider"></span></label>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="label">🔒 Mã PIN đăng nhập</div>
+      <div class="row">
+        <input class="pin-input" id="pin" type="tel" inputmode="numeric" maxlength="4" placeholder="— — — —" />
+        <button id="pinSave">Lưu</button>
+        <button id="pinClear">Tắt</button>
+      </div>
+      <div class="toggle-desc" id="pinState" style="margin-top:8px"></div>
+      <div class="lock-warn" id="pinLock" hidden>
+        <div id="pinLockText"></div>
+        <button class="mini" id="pinUnlock">Mở khóa</button>
+      </div>
+      <div class="toggle-desc" style="margin-top:6px">Sai 5 lần/thiết bị → khóa thiết bị đó 5 phút · sai 20 lần tổng → khóa tất cả 15 phút (lần sau gấp đôi).</div>
+      <div id="sessBox" hidden>
+        <div class="label inline" style="margin-top:14px">
+          <span>📱 Thiết bị đã đăng nhập</span>
+          <button class="mini danger" id="sessAll">Đăng xuất tất cả</button>
+        </div>
+        <div class="folder-list" id="sessList" style="max-height:none"></div>
+        <div class="toggle-desc" style="margin-top:6px">Đăng nhập được giữ 30 ngày, kể cả khi tắt/bật lại server. Đổi mã PIN sẽ đăng xuất mọi thiết bị.</div>
+      </div>
+    </div>
+
+    <div class="foot">Đóng cửa sổ = thu về khay (server vẫn chạy).<br/>Chuột phải icon khay để Bật/Tắt hoặc Thoát.</div>
+    </section>
+
+    <section class="tab" id="tab-folders" hidden>
+      <div class="card">
+        <div class="label">📂 Thư mục công khai</div>
+        <div class="hint">
+          Điện thoại / máy khác sẽ thấy các thư mục này ở đầu trang và chọn qua lại được.
+          Bấm vào tên để đổi tên. Quyền: <b>Chỉ xem</b> = xem & tải về ·
+          <b>Tải lên</b> = thêm file, tạo thư mục · <b>Toàn quyền</b> = thêm đổi tên, xóa (vào Thùng rác).
+          Thay đổi áp dụng ngay, không cần khởi động lại server.
+        </div>
+        <div class="folder-list" id="pubList" style="max-height:none"></div>
+        <button class="wide" id="pubAdd">＋ Thêm thư mục…</button>
+      </div>
+    </section>
+
+    <section class="tab" id="tab-links" hidden>
+      <div class="card">
+        <div class="label">🔗 Tạo link tạm thời</div>
+        <div class="row">
+          <button style="flex:1" id="lkPickFile">📄 Chọn file…</button>
+          <button style="flex:1" id="lkPickDir">📁 Chọn thư mục…</button>
+        </div>
+        <div class="path" id="lkTarget" style="margin-top:8px;color:var(--muted)">Chưa chọn file / thư mục</div>
+        <div class="label" style="margin-top:12px">Thời hạn</div>
+        <div class="seg" id="lkHours">
+          <button data-h="1">1 giờ</button>
+          <button data-h="6">6 giờ</button>
+          <button data-h="24" class="active">1 ngày</button>
+          <button data-h="72">3 ngày</button>
+          <button data-h="168">7 ngày</button>
+          <button data-h="720">30 ngày</button>
+        </div>
+        <div class="label" style="margin-top:12px">Mật khẩu 4 số <span style="text-transform:none;letter-spacing:0">(để trống = không cần)</span></div>
+        <div class="row">
+          <input class="pin-input" id="lkPin" type="tel" inputmode="numeric" maxlength="4" placeholder="— — — —" />
+          <button id="lkRand" title="Ngẫu nhiên">🎲</button>
+        </div>
+        <button class="btn-main" id="lkCreate" style="margin-top:12px">Tạo link</button>
+        <div class="result" id="lkResult" hidden></div>
+      </div>
+
+      <div class="card">
+        <div class="label inline">
+          <span>Link đã tạo</span>
+          <button class="mini" id="lkPurge">Dọn link hết hạn</button>
+        </div>
+        <div class="row" style="margin-bottom:10px">
+          <span class="toggle-desc" style="margin:0;flex:none">Địa chỉ dùng trong link</span>
+          <select id="lkBase" style="flex:1"></select>
+        </div>
+        <div class="folder-list" id="lkList" style="max-height:none"></div>
+      </div>
+    </section>
+
+    <section class="tab" id="tab-logs" hidden>
+      <div class="card">
+        <div class="label inline">
+          <span>📜 Hoạt động gần đây</span>
+          <button class="mini danger" id="logClear">Xóa nhật ký</button>
+        </div>
+        <div class="log-list" id="logList"></div>
+      </div>
+    </section>
+  </div>
+
+  <div class="overlay" id="qrOverlay" hidden>
+    <div class="qr-card">
+      <div class="label" id="qrTitle" style="text-align:center"></div>
+      <div class="qr-img" id="qrImg"></div>
+      <div class="qr-text" id="qrText"></div>
+      <div class="toggle-desc" style="text-align:center;margin-top:6px">Mở Camera trên iPhone và hướng vào mã</div>
+      <button class="wide" id="qrClose">Đóng</button>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const { invoke } = window.__TAURI__.core;
+    const { listen } = window.__TAURI__.event;
+
+    const $ = (id) => document.getElementById(id);
+    let state = null;
+    let portDirty = false;
+
+    function toast(msg) {
+      const t = $('toast');
+      t.textContent = msg;
+      t.classList.add('show');
+      clearTimeout(t._t);
+      t._t = setTimeout(() => t.classList.remove('show'), 1600);
+    }
+
+    function render(s) {
+      state = s;
+      // Status pill
+      const pill = $('pill');
+      pill.classList.toggle('on', s.running);
+      $('pillText').textContent = s.running ? 'Đang chạy' : 'Đã dừng';
+
+      // Dir + port
+      $('dir').textContent = s.dir;
+      $('dir').title = s.dir;
+      if (!portDirty) $('port').value = s.port;
+
+      // Main button
+      const btn = $('toggleBtn');
+      btn.textContent = s.running ? '■  Dừng server' : '▶  Khởi động server';
+      btn.classList.toggle('stop', s.running);
+
+      // URLs
+      const box = $('urls');
+      box.classList.toggle('disabled', !s.running);
+      box.innerHTML = '';
+      (s.urls || []).forEach((u) => {
+        const item = document.createElement('div');
+        item.className = 'url-item';
+        item.innerHTML =
+          `<div class="url-wrap">` +
+            `<div class="url-label">${u.label}</div>` +
+            `<div class="url" title="${u.url}">${u.url}</div>` +
+          `</div>` +
+          `<button class="icon-btn qr" title="Mã QR để quét bằng điện thoại">▦</button>` +
+          `<button class="icon-btn copy" title="Sao chép">⧉</button>` +
+          `<button class="icon-btn open" title="Mở">↗</button>`;
+        item.querySelector('.qr').onclick = () => showQr(u.url, u.label);
+        item.querySelector('.copy').onclick = () => { navigator.clipboard.writeText(u.url); toast('Đã sao chép: ' + u.label); };
+        item.querySelector('.open').onclick = () => invoke('open_ui', { url: u.url });
+        box.appendChild(item);
+      });
+      if (!s.urls || !s.urls.length) box.innerHTML = '<div class="toggle-desc">Server chưa chạy.</div>';
+
+      // Toggles
+      $('sol').checked = s.start_on_launch;
+      $('autostart').checked = s.autostart;
+
+      // Favorite / default buttons for the current folder
+      const favBtn = $('favBtn');
+      favBtn.classList.toggle('active', s.is_favorite);
+      favBtn.textContent = s.is_favorite ? '★ Đã thích' : '☆ Yêu thích';
+      const defBtn = $('defBtn');
+      defBtn.classList.toggle('active', s.is_default);
+      defBtn.textContent = s.is_default ? '📌 Mặc định ✓' : '📌 Mặc định';
+
+      renderFolderList('favList', 'favCard', s.favorites || [], s, true);
+      renderFolderList('recentList', 'recentCard',
+        (s.recents || []).filter((d) => !(s.favorites || []).includes(d)), s, false);
+
+      // PIN
+      const pinEl = $('pin');
+      if (document.activeElement !== pinEl) pinEl.value = s.pin || '';
+      $('pinState').textContent = s.pin
+        ? '🔒 Đang bật · cần nhập PIN khi truy cập'
+        : '🔓 Tắt · ai trong mạng cũng vào được';
+      renderLoginLock(s);
+      $('sessBox').hidden = !s.pin;
+      if (s.pin) loadSessions();
+
+      renderBases();
+    }
+
+    // Wrong-PIN locks reported by the server; refresh when the soonest one expires.
+    let lockTimer = null;
+    function renderLoginLock(s) {
+      const g = s.login_lock || {};
+      const until = (secs) => new Date(Date.now() + secs * 1000)
+        .toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+      const parts = [];
+      if (g.global_secs) parts.push(`<b>tất cả thiết bị</b> đến ${until(g.global_secs)}`);
+      (g.devices || []).forEach((d) => parts.push(`${esc(d.device)} đến ${until(d.secs)}`));
+      const box = $('pinLock');
+      if (parts.length) {
+        $('pinLockText').innerHTML = '🚫 Đang khóa đăng nhập do nhập sai PIN nhiều lần: ' + parts.join(', ');
+      } else if (g.fails) {
+        $('pinLockText').textContent = `⚠️ Có ${g.fails} lần nhập sai PIN từ lần đăng nhập đúng gần nhất.`;
+      }
+      box.hidden = !s.pin || (!parts.length && !g.fails);
+      $('pinUnlock').hidden = !parts.length && !g.fails;
+
+      clearTimeout(lockTimer);
+      const secs = [g.global_secs, ...(g.devices || []).map((d) => d.secs)].filter(Boolean);
+      if (secs.length) lockTimer = setTimeout(refresh, (Math.min(...secs) + 1) * 1000);
+    }
+
+    function basename(p) {
+      if (!p) return p;
+      const parts = p.replace(/[\\/]+$/, '').split(/[\\/]/);
+      return parts[parts.length - 1] || p;
+    }
+
+    function renderFolderList(listId, cardId, dirs, s, isFav) {
+      const list = $(listId), card = $(cardId);
+      list.innerHTML = '';
+      if (!dirs.length) { card.style.display = 'none'; return; }
+      card.style.display = '';
+      dirs.forEach((d) => {
+        const isDefault = s.default_dir === d;
+        const row = document.createElement('div');
+        row.className = 'folder-row' + (d === s.dir ? ' current' : '');
+        row.innerHTML =
+          `<span class="fi">${isDefault ? '📌' : '📁'}</span>` +
+          `<div class="fmeta">` +
+            `<div class="fname">${basename(d)}${isDefault ? '<span class="badge">MẶC ĐỊNH</span>' : ''}</div>` +
+            `<div class="fpath" title="${d}">${d}</div>` +
+          `</div>` +
+          (isFav ? `<span class="fx" title="Bỏ yêu thích">✕</span>` : '');
+        row.onclick = () => switchDir(d);
+        if (isFav) {
+          row.querySelector('.fx').onclick = async (ev) => {
+            ev.stopPropagation();
+            render(await invoke('remove_favorite', { dir: d }));
+            toast('Đã bỏ yêu thích');
+          };
+        }
+        list.appendChild(row);
+      });
+    }
+
+    async function switchDir(dir) {
+      if (state && dir === state.dir) return;
+      try { render(await invoke('set_dir', { dir })); toast('Đã chuyển: ' + basename(dir)); }
+      catch (e) { toast('Lỗi: ' + e); }
+    }
+
+    async function refresh() { render(await invoke('get_status')); }
+
+    $('pickBtn').onclick = async () => {
+      const dir = await invoke('pick_folder');
+      if (!dir) return;
+      try { render(await invoke('set_dir', { dir })); toast('Đã đổi thư mục'); }
+      catch (e) { toast('Lỗi: ' + e); }
+    };
+
+    $('favBtn').onclick = async () => {
+      if (!state) return;
+      const dir = state.dir, was = state.is_favorite;
+      render(await invoke('toggle_favorite', { dir }));
+      toast(was ? 'Đã bỏ yêu thích' : 'Đã thêm yêu thích');
+    };
+
+    $('defBtn').onclick = async () => {
+      if (!state) return;
+      const makeDefault = !state.is_default;
+      render(await invoke('set_default', { dir: makeDefault ? state.dir : null }));
+      toast(makeDefault ? 'Đã đặt làm mặc định' : 'Đã bỏ mặc định');
+    };
+
+    $('port').onchange = async () => {
+      const port = parseInt($('port').value, 10);
+      if (port >= 1 && port <= 65535) {
+        render(await invoke('set_port', { port }));
+        portDirty = false;
+        toast('Đã đổi cổng');
+      }
+    };
+    $('port').oninput = () => { portDirty = true; };
+
+    $('toggleBtn').onclick = async () => {
+      const btn = $('toggleBtn');
+      btn.disabled = true;
+      try {
+        if (state && state.running) {
+          render(await invoke('stop_server'));
+        } else {
+          render(await invoke('start_server'));
+        }
+      } catch (e) {
+        toast('Lỗi: ' + e);
+      } finally {
+        btn.disabled = false;
+      }
+    };
+
+    $('sol').onchange = async () => {
+      render(await invoke('set_start_on_launch', { enabled: $('sol').checked }));
+    };
+
+    $('autostart').onchange = async () => {
+      try {
+        render(await invoke('set_autostart', { enabled: $('autostart').checked }));
+        toast($('autostart').checked ? 'Đã bật khởi động cùng Windows' : 'Đã tắt');
+      } catch (e) {
+        toast('Lỗi: ' + e);
+        $('autostart').checked = !$('autostart').checked;
+      }
+    };
+
+    $('pin').addEventListener('input', () => {
+      $('pin').value = $('pin').value.replace(/\D/g, '').slice(0, 4);
+    });
+    $('pinSave').onclick = async () => {
+      const pin = $('pin').value.trim();
+      if (pin.length !== 4) { toast('PIN phải gồm 4 chữ số'); return; }
+      try { render(await invoke('set_pin', { pin })); toast('Đã đặt mã PIN'); }
+      catch (e) { toast('Lỗi: ' + e); }
+    };
+    $('pinUnlock').onclick = async () => {
+      render(await invoke('unlock_login'));
+      toast('Đã mở khóa đăng nhập');
+    };
+    $('pinClear').onclick = async () => {
+      try { render(await invoke('set_pin', { pin: null })); toast('Đã tắt mã PIN'); }
+      catch (e) { toast('Lỗi: ' + e); }
+    };
+
+    // Live updates pushed from Rust (tray toggle, auto-start, etc.)
+    listen('status', (e) => render(e.payload));
+
+    // ---------- Helpers for the database-backed tabs ----------
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const randomPin = () => String(crypto.getRandomValues(new Uint32Array(1))[0] % 10000).padStart(4, '0');
+    const fmtDate = (ts) => new Date(ts * 1000).toLocaleString('vi-VN',
+      { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' });
+    function fmtLeft(ts) {
+      const s = ts - Date.now() / 1000;
+      if (s < 3600) return Math.max(1, Math.round(s / 60)) + ' phút';
+      if (s < 86400) return Math.round(s / 3600) + ' giờ';
+      return Math.round(s / 86400) + ' ngày';
+    }
+    function fmtAgo(ts) {
+      const s = Date.now() / 1000 - ts;
+      if (s < 60) return 'vừa xong';
+      if (s < 3600) return Math.round(s / 60) + ' phút trước';
+      if (s < 86400) return Math.round(s / 3600) + ' giờ trước';
+      return Math.round(s / 86400) + ' ngày trước';
+    }
+    function segValue(id, fallback) {
+      const a = $(id).querySelector('.active');
+      return a ? +a.dataset.h : fallback;
+    }
+    function bindSeg(id) {
+      $(id).addEventListener('click', (e) => {
+        const b = e.target.closest('[data-h]');
+        if (b) $(id).querySelectorAll('button').forEach((x) => x.classList.toggle('active', x === b));
+      });
+    }
+    function bindPinInput(el) {
+      el.addEventListener('input', () => { el.value = el.value.replace(/\D/g, '').slice(0, 4); });
+    }
+
+    // ---------- Tabs ----------
+    let activeTab = 'server';
+    $('tabs').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-tab]');
+      if (!b) return;
+      activeTab = b.dataset.tab;
+      document.querySelectorAll('#tabs button').forEach((x) => x.classList.toggle('active', x === b));
+      document.querySelectorAll('.tab').forEach((s) => { s.hidden = s.id !== 'tab-' + activeTab; });
+      window.scrollTo(0, 0);
+      if (activeTab === 'folders') loadFolders();
+      else if (activeTab === 'links') loadLinks();
+      else if (activeTab === 'logs') loadLogs();
+    });
+
+    // ---------- Public folders ----------
+    async function loadFolders() { renderFolders(await invoke('list_folders')); }
+
+    // 0 view · 1 + upload & new folder · 2 + rename & delete (to the Recycle Bin)
+    const PERMS = [['0', '👁 Chỉ xem'], ['1', '⬆ Tải lên'], ['2', '✏️ Toàn quyền']];
+    const permSelect = (p) => `<select class="pub-perm" title="Quyền của điện thoại trong thư mục này">` +
+      PERMS.map(([v, l]) => `<option value="${v}"${String(p) === v ? ' selected' : ''}>${l}</option>`).join('') +
+      `</select>`;
+
+    function renderFolders(view) {
+      const folders = view.folders || [];
+      const main = state ? state.dir : '';
+      let html =
+        `<div class="pub-row main" data-main="1">` +
+          `<div class="pub-top"><span class="fi">🏠</span>` +
+            `<div class="pub-name" style="border:none">${esc(basename(main))} <span class="badge">CHÍNH</span></div>` +
+            permSelect(view.main_perm) + `</div>` +
+          `<div class="pub-path" title="${esc(main)}">${esc(main)}</div>` +
+        `</div>`;
+      html += folders.map((f) =>
+        `<div class="pub-row${f.exists ? '' : ' missing'}" data-id="${f.id}">` +
+          `<div class="pub-top">` +
+            `<span class="fi">${f.exists ? '📁' : '⚠️'}</span>` +
+            `<input class="pub-name" value="${esc(f.name)}" maxlength="60" title="Bấm để đổi tên" />` +
+            permSelect(f.perm) +
+            `<span class="fx" title="Bỏ khỏi danh sách (không xóa file)">✕</span>` +
+          `</div>` +
+          `<div class="pub-path" title="${esc(f.path)}">${f.exists ? '' : '(không tìm thấy) '}${esc(f.path)}</div>` +
+        `</div>`).join('');
+      if (!folders.length) html += '<div class="empty-hint">Chưa có thư mục công khai nào — hiện chỉ chia sẻ thư mục chính.</div>';
+      $('pubList').innerHTML = html;
+    }
+
+    $('pubAdd').onclick = async () => {
+      const dir = await invoke('pick_folder');
+      if (!dir) return;
+      try { renderFolders(await invoke('add_folder', { dir })); toast('Đã thêm: ' + basename(dir)); }
+      catch (e) { toast('Lỗi: ' + e); }
+    };
+    $('pubList').addEventListener('change', async (e) => {
+      const row = e.target.closest('.pub-row');
+      if (!row) return;
+      const perm = +row.querySelector('.pub-perm').value;
+      try {
+        if (row.dataset.main) {
+          renderFolders(await invoke('set_main_perm', { perm }));
+        } else {
+          const id = +row.dataset.id;
+          const name = row.querySelector('.pub-name').value;
+          renderFolders(await invoke('update_folder', { id, name, perm }));
+        }
+        toast('Đã lưu');
+      } catch (err) { toast('Lỗi: ' + err); loadFolders(); }
+    });
+    $('pubList').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && e.target.classList.contains('pub-name')) e.target.blur();
+    });
+    $('pubList').addEventListener('click', async (e) => {
+      const x = e.target.closest('.fx');
+      const row = x && x.closest('.pub-row[data-id]');
+      if (!row) return;
+      renderFolders(await invoke('remove_folder', { id: +row.dataset.id }));
+      toast('Đã bỏ khỏi danh sách công khai');
+    });
+
+    // ---------- Temporary share links ----------
+    let lkTarget = null;
+
+    // Links are built from the address chosen here — localhost only works on this PC.
+    function renderBases() {
+      const sel = $('lkBase'), prev = sel.value;
+      const urls = (state && state.urls) || [];
+      sel.innerHTML = urls.map((u) => `<option value="${esc(u.url)}">${esc(u.label)} — ${esc(u.url)}</option>`).join('');
+      const pick = urls.find((u) => u.url === prev)
+        || urls.find((u) => u.label === 'Mạng LAN')
+        || urls.find((u) => !u.url.includes('localhost'))
+        || urls[0];
+      if (pick) sel.value = pick.url;
+    }
+    const linkUrl = (l) => ($('lkBase').value || 'http://localhost:' + (state ? state.port : 3000)) + '/s/' + l.token;
+
+    function setLkTarget(p) {
+      lkTarget = p;
+      $('lkTarget').textContent = p;
+      $('lkTarget').title = p;
+      $('lkTarget').style.color = 'var(--text)';
+      $('lkResult').hidden = true;
+    }
+    $('lkPickFile').onclick = async () => { const p = await invoke('pick_file'); if (p) setLkTarget(p); };
+    $('lkPickDir').onclick = async () => { const p = await invoke('pick_folder'); if (p) setLkTarget(p); };
+    bindSeg('lkHours');
+    bindPinInput($('lkPin'));
+    $('lkPin').value = randomPin();
+    $('lkRand').onclick = () => { $('lkPin').value = randomPin(); };
+
+    $('lkCreate').onclick = async () => {
+      if (!lkTarget) { toast('Hãy chọn file hoặc thư mục trước'); return; }
+      const pin = $('lkPin').value.trim();
+      if (pin && !/^\d{4}$/.test(pin)) { toast('Mật khẩu phải gồm 4 chữ số'); return; }
+      try {
+        const link = await invoke('create_link', { path: lkTarget, hours: segValue('lkHours', 24), pin: pin || null });
+        const url = linkUrl(link);
+        const r = $('lkResult');
+        r.hidden = false;
+        r.innerHTML =
+          `✓ Đã tạo link cho <b>${esc(link.name)}</b><br>` +
+          `<span class="u">${esc(url)}</span><br>` +
+          (link.pin ? `🔑 Mật khẩu: <b>${esc(link.pin)}</b>` : '🔓 Không cần mật khẩu') +
+          ` · hết hạn ${fmtDate(link.expires_at)}` +
+          (state && state.running ? '' : '<br><span style="color:var(--danger)">⚠️ Server đang tắt — bật server thì link mới dùng được.</span>') +
+          `<div class="qr-img small" style="margin-top:10px">${await invoke('qr_svg', { text: url }).catch(() => '')}</div>`;
+        navigator.clipboard.writeText(url).then(() => toast('Đã tạo & sao chép link'), () => toast('Đã tạo link'));
+        $('lkPin').value = randomPin();
+        loadLinks();
+      } catch (e) {
+        toast('Lỗi: ' + e);
+      }
+    };
+
+    function showLinks(links) {
+      const active = links.filter((l) => !l.expired).length;
+      $('linkCount').hidden = !active;
+      $('linkCount').textContent = active;
+      const list = $('lkList');
+      if (!links.length) { list.innerHTML = '<div class="empty-hint">Chưa có link nào.</div>'; return; }
+      list.innerHTML = links.map((l) =>
+        `<div class="lk-row${l.expired ? ' dead' : ''}" data-id="${l.id}" data-token="${esc(l.token)}">` +
+          `<div class="lk-top">` +
+            `<span>${l.kind === 'dir' ? '📁' : '📄'}</span>` +
+            `<span class="lk-name" title="${esc(l.target)}">${esc(l.name)}</span>` +
+            (l.expired ? '' : '<button data-act="qr" title="Mã QR">▦</button><button data-act="copy" title="Sao chép link">⧉</button><button data-act="open" title="Mở trong trình duyệt">↗</button>') +
+            `<button class="danger" data-act="del" title="Xóa link">✕</button>` +
+          `</div>` +
+          `<div class="lk-meta">` +
+            (l.pin ? `🔑 <b>${esc(l.pin)}</b>` : '🔓 không mật khẩu') + ' · ' +
+            (l.expired ? '<span class="warn">đã hết hạn</span>' : 'còn ' + fmtLeft(l.expires_at)) + ' · ' +
+            `${l.views} lượt mở` + (l.last_access ? ' · ' + fmtAgo(l.last_access) : '') +
+            (l.locked ? `<br><span class="warn">🔒 Bị khóa do nhập sai ${l.failed} lần</span> <button class="mini" data-act="unlock">Mở khóa</button>` : '') +
+          `</div>` +
+        `</div>`).join('');
+    }
+    async function loadLinks() { showLinks(await invoke('list_links')); }
+
+    $('lkList').addEventListener('click', async (e) => {
+      const b = e.target.closest('[data-act]');
+      const row = e.target.closest('.lk-row');
+      if (!b || !row) return;
+      const id = +row.dataset.id;
+      const url = linkUrl({ token: row.dataset.token });
+      if (b.dataset.act === 'qr') showQr(url, row.querySelector('.lk-name').textContent);
+      else if (b.dataset.act === 'copy') { navigator.clipboard.writeText(url); toast('Đã sao chép link'); }
+      else if (b.dataset.act === 'open') invoke('open_ui', { url });
+      else if (b.dataset.act === 'del') { showLinks(await invoke('delete_link', { id })); toast('Đã xóa link'); }
+      else if (b.dataset.act === 'unlock') { showLinks(await invoke('unlock_link', { id })); toast('Đã mở khóa link'); }
+    });
+    $('lkPurge').onclick = async () => { showLinks(await invoke('purge_links')); toast('Đã dọn link hết hạn'); };
+
+    // ---------- Activity log ----------
+    const LOG_LABEL = {
+      login: ['🔓', 'Đăng nhập'],
+      login_fail: ['⛔', 'Sai mã PIN đăng nhập'],
+      login_lock: ['🚫', 'Khóa đăng nhập'],
+      login_unlock: ['🔓', 'Mở khóa đăng nhập'],
+      logout: ['⏻', 'Đăng xuất'],
+      session_revoke: ['⏏️', 'Đăng xuất thiết bị (từ app)'],
+      mkdir: ['📁', 'Tạo thư mục'],
+      rename: ['✏️', 'Đổi tên'],
+      delete: ['🗑️', 'Chuyển vào Thùng rác'],
+      upload: ['⬆️', 'Tải lên'],
+      link_create: ['🔗', 'Tạo link'],
+      link_delete: ['🗑️', 'Xóa link'],
+      link_open: ['👁️', 'Mở link'],
+      link_fail: ['⛔', 'Sai mật khẩu link'],
+      link_lock: ['🔒', 'Khóa link (sai quá nhiều lần)'],
+      link_download: ['⬇️', 'Tải qua link'],
+    };
+    async function loadLogs() {
+      const logs = await invoke('list_logs');
+      const list = $('logList');
+      if (!logs.length) { list.innerHTML = '<div class="empty-hint">Chưa có hoạt động nào.</div>'; return; }
+      list.innerHTML = logs.map((l) => {
+        const [ic, label] = LOG_LABEL[l.action] || ['•', l.action];
+        // Paths are long; the full one stays in the tooltip.
+        const shown = ['upload', 'mkdir', 'delete'].includes(l.action) ? basename(l.detail)
+          : l.action === 'rename' ? l.detail.split(' → ').map(basename).join(' → ')
+          : l.detail;
+        return `<div class="log-row"><span class="log-ic">${ic}</span><div class="log-main">` +
+          `<div class="log-what" title="${esc(l.detail)}">${label}${shown ? ` <span>· ${esc(shown)}</span>` : ''}</div>` +
+          `<div class="log-sub">${fmtDate(l.ts)} · ${esc(l.ip)}</div>` +
+        `</div></div>`;
+      }).join('');
+    }
+    $('logClear').onclick = async () => { await invoke('clear_logs'); loadLogs(); toast('Đã xóa nhật ký'); };
+
+    // ---------- QR codes ----------
+    async function showQr(text, title) {
+      try { $('qrImg').innerHTML = await invoke('qr_svg', { text }); }
+      catch (e) { toast('Lỗi: ' + e); return; }
+      $('qrTitle').textContent = title || 'Quét để mở';
+      $('qrText').textContent = text;
+      $('qrOverlay').hidden = false;
+    }
+    const hideQr = () => { $('qrOverlay').hidden = true; };
+    $('qrClose').onclick = hideQr;
+    $('qrOverlay').addEventListener('click', (e) => { if (e.target.id === 'qrOverlay') hideQr(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideQr(); });
+    // The address a phone on the same network should use (not localhost).
+    $('qrPhone').onclick = () => {
+      const urls = (state && state.urls) || [];
+      const u = urls.find((x) => x.label === 'Mạng LAN') || urls.find((x) => !x.url.includes('localhost')) || urls[0];
+      if (!u) { toast('Chưa có địa chỉ mạng'); return; }
+      if (state && !state.running) toast('Server đang tắt — bật server trước khi quét');
+      showQr(u.url, u.label);
+    };
+
+    // ---------- Logged-in devices ----------
+    function deviceName(ua) {
+      const os = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android'
+        : /Windows/.test(ua) ? 'Windows' : /Macintosh|Mac OS X/.test(ua) ? 'Mac' : /Linux/.test(ua) ? 'Linux' : 'Thiết bị';
+      const br = /Edg\//.test(ua) ? 'Edge' : /CriOS|Chrome\//.test(ua) ? 'Chrome'
+        : /FxiOS|Firefox\//.test(ua) ? 'Firefox' : /Safari\//.test(ua) ? 'Safari' : '';
+      return br ? `${os} · ${br}` : os;
+    }
+    function showSessions(list) {
+      const box = $('sessList');
+      $('sessAll').hidden = !list.length;
+      if (!list.length) { box.innerHTML = '<div class="empty-hint">Chưa có thiết bị nào đăng nhập.</div>'; return; }
+      box.innerHTML = list.map((s) => {
+        const mobile = /iPhone|iPad|Android/.test(s.agent);
+        return `<div class="sess-row" data-id="${s.id}">` +
+          `<span class="fi">${mobile ? '📱' : '💻'}</span>` +
+          `<div class="fmeta"><div class="fname" title="${esc(s.agent)}">${esc(deviceName(s.agent))}</div>` +
+          `<div class="sess-sub">${esc(s.ip)} · hoạt động ${fmtAgo(s.last_seen)} · đăng nhập ${fmtDate(s.created_at)}</div></div>` +
+          `<span class="fx" title="Đăng xuất thiết bị này">✕</span>` +
+        `</div>`;
+      }).join('');
+    }
+    async function loadSessions() { showSessions(await invoke('list_sessions')); }
+    $('sessList').addEventListener('click', async (e) => {
+      const row = e.target.closest('.fx') && e.target.closest('.sess-row');
+      if (!row) return;
+      showSessions(await invoke('revoke_session', { id: +row.dataset.id }));
+      toast('Đã đăng xuất thiết bị');
+    });
+    $('sessAll').onclick = async () => {
+      showSessions(await invoke('revoke_all_sessions'));
+      toast('Đã đăng xuất tất cả thiết bị');
+    };
+
+    // The server tells us when phones create links, log in, upload… (debounced).
+    let dbTimer = null;
+    listen('db-changed', () => {
+      clearTimeout(dbTimer);
+      dbTimer = setTimeout(() => {
+        loadLinks();
+        if (state && state.pin) loadSessions();
+        if (activeTab === 'logs') loadLogs();
+      }, 300);
+    });
+    // Keep "còn X giờ" fresh while the links tab is open.
+    setInterval(() => { if (activeTab === 'links') loadLinks(); }, 30000);
+
+    refresh();
+    loadLinks();
+  </script>
+</body>
+</html>

@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>namsv · Đăng nhập</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0a0a0f; --surface: #111118; --border: #1e1e2e;
+      --accent: #7c6af7; --accent2: #e879f9; --text: #e2e2f0; --muted: #6b6b8a; --danger: #f87171;
+    }
+    html, body { height: 100%; }
+    body {
+      background: radial-gradient(1200px 600px at 50% -10%, #171626, var(--bg));
+      color: var(--text); font-family: ui-monospace, 'JetBrains Mono', monospace;
+      display: grid; place-items: center; padding: 20px;
+    }
+    .card {
+      width: 100%; max-width: 340px; background: var(--surface);
+      border: 1px solid var(--border); border-radius: 18px; padding: 30px 26px;
+      box-shadow: 0 30px 70px rgba(0,0,0,.55); text-align: center;
+    }
+    .logo {
+      width: 54px; height: 54px; border-radius: 15px; margin: 0 auto 16px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      display: grid; place-items: center; font-weight: 800; font-size: 26px; color: #fff;
+      box-shadow: 0 10px 26px rgba(124,106,247,.4);
+    }
+    h1 { font-size: 17px; letter-spacing: .5px; }
+    p.sub { font-size: 11px; color: var(--muted); margin-top: 6px; }
+    .pins { display: flex; gap: 10px; justify-content: center; margin: 24px 0 8px; }
+    .pins input {
+      width: 52px; height: 62px; text-align: center; font-size: 26px; font-weight: 700;
+      color: var(--text); background: var(--bg); border: 1.5px solid var(--border);
+      border-radius: 12px; outline: none; transition: .15s; font-family: inherit;
+      -moz-appearance: textfield;
+    }
+    .pins input::-webkit-outer-spin-button, .pins input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    .pins input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(124,106,247,.2); }
+    .pins.err input { border-color: var(--danger); animation: shake .3s; }
+    @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-6px)} 75%{transform:translateX(6px)} }
+    .msg { font-size: 11px; color: var(--danger); min-height: 16px; margin-bottom: 12px; }
+    button {
+      width: 100%; padding: 13px; font-family: inherit; font-size: 14px; font-weight: 700;
+      color: #fff; border: none; border-radius: 11px; cursor: pointer;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      box-shadow: 0 8px 22px rgba(124,106,247,.35);
+    }
+    button:active { transform: translateY(1px); }
+    button:disabled, .pins input:disabled { opacity: .45; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">n</div>
+    <h1>namsv</h1>
+    <p class="sub">// nhập mã PIN 4 số để truy cập</p>
+
+    <form id="form" method="POST" action="/__api/login">
+      <div class="pins" id="pins">
+        <input type="tel" inputmode="numeric" maxlength="1" autocomplete="off" />
+        <input type="tel" inputmode="numeric" maxlength="1" autocomplete="off" />
+        <input type="tel" inputmode="numeric" maxlength="1" autocomplete="off" />
+        <input type="tel" inputmode="numeric" maxlength="1" autocomplete="off" />
+      </div>
+      <div class="msg" id="msg"></div>
+      <input type="hidden" name="pin" id="pin" />
+      <button type="submit">Đăng nhập</button>
+    </form>
+  </div>
+
+  <script>
+    const boxes = Array.from(document.querySelectorAll('.pins input'));
+    const pins = document.getElementById('pins');
+    const form = document.getElementById('form');
+    const hidden = document.getElementById('pin');
+
+    // The same page guards temporary share links (/s/<token>), each with its own password.
+    const share = location.pathname.match(/^\/s\/([A-Za-z0-9]+)/);
+    if (share) {
+      form.action = '/s/' + share[1] + '/login';
+      document.querySelector('p.sub').textContent = '// link chia sẻ · nhập mật khẩu 4 số';
+    }
+
+    const params = new URLSearchParams(location.search);
+    const err = params.get('e');
+    const msg = document.getElementById('msg');
+    const setLocked = (on) => {
+      boxes.forEach(b => { b.disabled = on; });
+      form.querySelector('button').disabled = on;
+    };
+    const fmtWait = (s) => s >= 3600
+      ? `${Math.floor(s / 3600)} giờ ${Math.ceil((s % 3600) / 60)} phút`
+      : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+
+    if (err === '1') {
+      const left = parseInt(params.get('left') || '', 10);
+      msg.textContent = (share ? 'Mật khẩu' : 'Mã PIN') + ' không đúng' +
+        (left > 0 ? `, còn ${left} lần thử.` : ', thử lại.');
+      pins.classList.add('err');
+    } else if (err === 'lock' && share) {
+      msg.textContent = 'Link đã bị khóa do nhập sai quá nhiều lần. Hãy liên hệ người chia sẻ.';
+      setLocked(true);
+    } else if (err === 'lock') {
+      // Login PIN locked for a while (per device, or for everyone when g=1): count down.
+      // Count against a fixed deadline: timers stall while the phone/tab is in the background.
+      const deadline = Date.now() + parseInt(params.get('t') || '0', 10) * 1000;
+      const reason = params.get('g') === '1'
+        ? 'Đăng nhập đang tạm khóa vì có quá nhiều lần nhập sai.'
+        : 'Bạn đã nhập sai quá nhiều lần.';
+      setLocked(true);
+      const tick = () => {
+        const secs = Math.ceil((deadline - Date.now()) / 1000);
+        if (secs <= 0) {
+          history.replaceState(null, '', location.pathname);
+          msg.textContent = '';
+          setLocked(false);
+          boxes[0].focus();
+          return;
+        }
+        msg.textContent = `${reason} Thử lại sau ${fmtWait(secs)}.`;
+        setTimeout(tick, 500);
+      };
+      tick();
+    }
+
+    boxes[0].focus();
+
+    boxes.forEach((b, i) => {
+      b.addEventListener('input', () => {
+        b.value = b.value.replace(/\D/g, '').slice(0, 1);
+        pins.classList.remove('err');
+        if (b.value && i < boxes.length - 1) boxes[i + 1].focus();
+        if (boxes.every(x => x.value)) submit();
+      });
+      b.addEventListener('keydown', (e) => {
+        if (e.key === 'Backspace' && !b.value && i > 0) boxes[i - 1].focus();
+      });
+      b.addEventListener('paste', (e) => {
+        e.preventDefault();
+        const digits = (e.clipboardData.getData('text') || '').replace(/\D/g, '').slice(0, 4);
+        digits.split('').forEach((d, k) => { if (boxes[k]) boxes[k].value = d; });
+        if (digits.length) boxes[Math.min(digits.length, 4) - 1].focus();
+        if (boxes.every(x => x.value)) submit();
+      });
+    });
+
+    function submit() {
+      hidden.value = boxes.map(b => b.value).join('');
+      form.submit();
+    }
+    form.addEventListener('submit', () => { hidden.value = boxes.map(b => b.value).join(''); });
+  </script>
+</body>
+</html>
