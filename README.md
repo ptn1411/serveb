@@ -13,6 +13,7 @@ Chọn một thư mục trên máy, bật server, rồi bất kỳ thiết bị 
 - 🎬 **Xem trực tiếp** — hỗ trợ HTTP range nên video stream/tua được ngay trong trình duyệt
 - 📂 **Nhiều thư mục công khai** — thêm thư mục ở tab *Công khai*; điện thoại chọn qua lại ngay trên đầu trang. Mỗi thư mục (kể cả thư mục chính) có 3 mức quyền: *Chỉ xem* · *Tải lên* (thêm file, tạo thư mục) · *Toàn quyền* (thêm đổi tên, xóa). Áp dụng ngay, không cần khởi động lại server
 - ✏️ **Quản lý file từ điện thoại** — nút ⋯ trên mỗi dòng: xem, tải về, chia sẻ, đổi tên, xóa. Xóa là **chuyển vào Thùng rác Windows** nên khôi phục được
+- 🗜️ **Tải cả thư mục thành ZIP** — cho thư mục đang xem, từng thư mục con, và cả người nhận link chia sẻ thư mục. ZIP được stream ngay khi đọc file (không tạo file tạm, không giới hạn dung lượng), không nén (ảnh/video giữ nguyên, tải nhanh), giữ tên tiếng Việt và ngày sửa file
 - ▦ **Mã QR** — QR cho địa chỉ LAN (iPhone quét bằng Camera là vào) và cho từng link chia sẻ
 - 🔑 **Giữ đăng nhập 30 ngày** — mỗi thiết bị một phiên, không bị đăng xuất khi đổi thư mục/cổng hay tắt-bật server; có nút *Đăng xuất* trên web và danh sách *Thiết bị đã đăng nhập* trong app để đăng xuất từng máy. Đổi mã PIN sẽ đăng xuất tất cả
 - 🔗 **Link chia sẻ tạm thời** — cho 1 file hoặc 1 thư mục, có thời hạn (1 giờ → 30 ngày) và mật khẩu 4 số. Người nhận chỉ xem & tải về. Nhập sai 5 lần thì link tự khóa (mở khóa lại được trong app)
@@ -74,6 +75,7 @@ Server Rust mở HTTP trên `0.0.0.0:<port>`. `root=0` là thư mục chính, c�
 | `POST /__api/mkdir` · `/__api/rename` · `/__api/delete` | Tạo thư mục (*Tải lên*) · đổi tên, xóa vào Thùng rác (*Toàn quyền*) |
 | `POST /__api/logout` | Đăng xuất thiết bị hiện tại |
 | `/__api/qr?text=` | Ảnh QR (SVG) |
+| `/__api/zip?root=&path=` · `/s/<mã>/zip?path=` | Tải thư mục thành ZIP (stream) |
 | `/__api/links` | Tạo (`POST`) / liệt kê (`GET`) / xóa (`DELETE /__api/links/<id>`) link chia sẻ |
 | `/s/<mã>` | Trang link chia sẻ — **không** cần PIN chung, chỉ cần mật khẩu riêng của link |
 | `/*` | Tải file trong thư mục chính (giữ tương thích link cũ) |

@@ -16,10 +16,12 @@
 use crate::db::{self, Db, Link};
 use crate::guard::{self, Lock, LoginGuard, Outcome};
 use axum::{
-    body::Body,
+    body::{Body, Bytes},
     extract::{ConnectInfo, DefaultBodyLimit, Path as UrlPath, Query, Request, State},
     http::{
-        header::{CACHE_CONTROL, CONTENT_TYPE, COOKIE, RANGE, SET_COOKIE, USER_AGENT},
+        header::{
+            CACHE_CONTROL, CONTENT_DISPOSITION, CONTENT_TYPE, COOKIE, RANGE, SET_COOKIE, USER_AGENT,
+        },
         HeaderMap, HeaderValue, StatusCode,
     },
     middleware::{self, Next},
@@ -31,14 +33,15 @@ use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use socket2::{Domain, Protocol, Socket, Type};
 use std::cmp::Ordering;
-use std::io::ErrorKind;
+use std::io::{self, ErrorKind, Write};
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
-use tokio::sync::oneshot;
+use tokio::sync::{mpsc, oneshot};
 use tower::ServiceExt;
 use tower_http::services::{ServeDir, ServeFile};
+use zip::{result::ZipResult, write::SimpleFileOptions, CompressionMethod, ZipWriter};
 
 // The browser UI is embedded at compile time, so the shipped binary is self-contained.
 const UI_HTML: &str = include_str!("../assets/browser.html");
@@ -718,6 +721,183 @@ async fn delete_handler(
     }
 }
 
+// ---------------- Folder → ZIP (streamed) ----------------
+
+const ZIP_CHUNK: usize = 256 * 1024;
+
+/// `Write` end of the ZIP stream: gathers ~256 KB chunks and hands them to the HTTP
+/// body through a bounded channel, so a slow phone throttles the zipping instead of
+/// the archive piling up in memory. No temp file, no size limit.
+struct ChannelWriter {
+    tx: mpsc::Sender<io::Result<Bytes>>,
+    buf: Vec<u8>,
+}
+
+impl ChannelWriter {
+    fn send_buf(&mut self) -> io::Result<()> {
+        if self.buf.is_empty() {
+            return Ok(());
+        }
+        let chunk = std::mem::replace(&mut self.buf, Vec::with_capacity(ZIP_CHUNK));
+        self.tx
+            .blocking_send(Ok(Bytes::from(chunk)))
+            .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "client went away"))
+    }
+}
+
+impl Write for ChannelWriter {
+    fn write(&mut self, data: &[u8]) -> io::Result<usize> {
+        self.buf.extend_from_slice(data);
+        if self.buf.len() >= ZIP_CHUNK {
+            self.send_buf()?;
+        }
+        Ok(data.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.send_buf()
+    }
+}
+
+/// ZIP stores local wall-clock time (what Explorer and the Files app show).
+fn zip_time(meta: &std::fs::Metadata) -> Option<zip::DateTime> {
+    use chrono::{Datelike, Timelike};
+    let t: chrono::DateTime<chrono::Local> = meta.modified().ok()?.into();
+    zip::DateTime::from_date_and_time(
+        u16::try_from(t.year()).ok()?,
+        t.month() as u8,
+        t.day() as u8,
+        t.hour() as u8,
+        t.minute() as u8,
+        t.second() as u8,
+    )
+    .ok()
+}
+
+fn zip_options(meta: &std::fs::Metadata) -> SimpleFileOptions {
+    // Stored, not deflated: photos/videos don't shrink anyway and this keeps it fast.
+    let opts = SimpleFileOptions::default()
+        .compression_method(CompressionMethod::Stored)
+        .large_file(meta.len() >= u64::from(u32::MAX));
+    match zip_time(meta) {
+        Some(t) => opts.last_modified_time(t),
+        None => opts,
+    }
+}
+
+/// Add everything under `dir` as `prefix…`. Symlinks/junctions are skipped so an
+/// archive can never reach outside the shared folder; files that can't be opened
+/// (locked, no permission) are skipped instead of failing the whole download.
+fn zip_dir<W: Write + io::Seek>(zip: &mut ZipWriter<W>, dir: &Path, prefix: &str) -> ZipResult<()> {
+    let mut entries: Vec<_> = match std::fs::read_dir(dir) {
+        Ok(read) => read.filter_map(Result::ok).collect(),
+        Err(_) => return Ok(()),
+    };
+    entries.sort_by_key(|e| e.file_name());
+    for entry in entries {
+        let (Ok(kind), Ok(meta)) = (entry.file_type(), entry.metadata()) else {
+            continue;
+        };
+        if kind.is_symlink() {
+            continue;
+        }
+        let name = format!("{}{}", prefix, entry.file_name().to_string_lossy());
+        if kind.is_dir() {
+            zip.add_directory(name.as_str(), zip_options(&meta))?;
+            zip_dir(zip, &entry.path(), &format!("{}/", name))?;
+        } else if kind.is_file() {
+            let Ok(mut file) = std::fs::File::open(entry.path()) else {
+                continue;
+            };
+            zip.start_file(name, zip_options(&meta))?;
+            io::copy(&mut file, zip)?;
+        }
+    }
+    Ok(())
+}
+
+/// A safe archive name for `dir` ("D:\" and friends have no usable file name).
+fn zip_name(dir: &Path) -> String {
+    let name: String = db::display_name(dir)
+        .chars()
+        .map(|c| if r#"\/:*?"<>|"#.contains(c) || c.is_control() { '_' } else { c })
+        .collect();
+    let name = name.trim_matches(['_', ' ', '.']).to_string();
+    if name.is_empty() {
+        "thu-muc".to_string()
+    } else {
+        name
+    }
+}
+
+/// `attachment` with a UTF-8 file name (RFC 6266) plus an ASCII fallback.
+fn content_disposition(filename: &str) -> HeaderValue {
+    use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
+    const ATTR: &percent_encoding::AsciiSet =
+        &NON_ALPHANUMERIC.remove(b'.').remove(b'-').remove(b'_').remove(b'~');
+    let ascii: String = filename
+        .chars()
+        .map(|c| if c == ' ' || (c.is_ascii_graphic() && c != '"' && c != '\\') { c } else { '_' })
+        .collect();
+    let value = format!(
+        "attachment; filename=\"{}\"; filename*=UTF-8''{}",
+        ascii,
+        utf8_percent_encode(filename, ATTR)
+    );
+    HeaderValue::from_str(&value).unwrap_or(HeaderValue::from_static("attachment; filename=\"folder.zip\""))
+}
+
+/// Stream `dir` as `<name>.zip`; the archive holds a single top folder `<name>/`.
+fn zip_response(dir: PathBuf) -> Response {
+    let name = zip_name(&dir);
+    let (tx, rx) = mpsc::channel::<io::Result<Bytes>>(8);
+    let err_tx = tx.clone();
+    let top = format!("{}/", name);
+    tokio::task::spawn_blocking(move || {
+        let mut zip = ZipWriter::new_stream(ChannelWriter {
+            tx,
+            buf: Vec::with_capacity(ZIP_CHUNK),
+        });
+        let result = zip_dir(&mut zip, &dir, &top)
+            .and_then(|_| zip.finish())
+            .map_err(io::Error::other)
+            .and_then(|w| w.into_inner().flush());
+        if let Err(e) = result {
+            // Break the download visibly rather than end with a truncated archive.
+            let _ = err_tx.blocking_send(Err(e));
+        }
+    });
+    let body = Body::from_stream(futures_util::stream::unfold(rx, |mut rx| async move {
+        rx.recv().await.map(|item| (item, rx))
+    }));
+    (
+        [
+            (CONTENT_TYPE, HeaderValue::from_static("application/zip")),
+            (CONTENT_DISPOSITION, content_disposition(&format!("{}.zip", name))),
+            (CACHE_CONTROL, HeaderValue::from_static("no-store")),
+        ],
+        body,
+    )
+        .into_response()
+}
+
+/// `GET /__api/zip?root=<id>&path=<dir>` — download a folder as ZIP (any permission).
+async fn zip_handler(
+    State(ctx): State<AppCtx>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Query(q): Query<ListQuery>,
+) -> Response {
+    let dir = match root_of(&ctx, q.root.unwrap_or(0))
+        .and_then(|root| safe_join(&root.path, q.path.as_deref().unwrap_or("/")))
+    {
+        Ok(d) if d.is_dir() => d,
+        Ok(_) => return json_err(StatusCode::NOT_FOUND, "Không phải thư mục"),
+        Err(e) => return from_err(e),
+    };
+    ctx.log(&client_ip(&addr), "zip", &db::clean_path(&dir));
+    zip_response(dir)
+}
+
 // ---------------- QR codes ----------------
 
 /// SVG QR code for `text` — the LAN address or a share link, to scan with a phone.
@@ -1017,6 +1197,38 @@ async fn share_file(
     serve_file(path, req).await
 }
 
+/// `GET /s/<token>/zip?path=<dir>` — a shared folder (or a subfolder of it) as ZIP.
+async fn share_zip(
+    State(ctx): State<AppCtx>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    UrlPath(token): UrlPath<String>,
+    headers: HeaderMap,
+    Query(q): Query<ListQuery>,
+) -> Response {
+    let link = match share_api_access(&ctx, &token, &headers) {
+        Ok(l) => l,
+        Err(resp) => return resp,
+    };
+    if link.kind != "dir" {
+        return json_err(StatusCode::BAD_REQUEST, "Link này là một file, không phải thư mục");
+    }
+    let rel = q.path.unwrap_or_else(|| "/".to_string());
+    let dir = match safe_join(Path::new(&link.target), &rel) {
+        Ok(d) if d.is_dir() => d,
+        Ok(_) => return json_err(StatusCode::NOT_FOUND, "Không phải thư mục"),
+        Err(e) => return from_err(e),
+    };
+    ctx.db.link_touched(link.id);
+    let sub = rel.trim_matches('/');
+    let detail = if sub.is_empty() {
+        format!("{} (ZIP)", link.name)
+    } else {
+        format!("{}/{} (ZIP)", link.name, sub)
+    };
+    ctx.log(&client_ip(&addr), "link_download", &detail);
+    zip_response(dir)
+}
+
 // ---------------- Binding (dual-stack + auto port increment) ----------------
 
 /// Bind a single port. Tries dual-stack IPv6 first (also serves IPv4 via mapped
@@ -1122,6 +1334,7 @@ fn router(ctx: AppCtx) -> Router {
         .route("/__api/rename", post(rename_handler))
         .route("/__api/delete", post(delete_handler))
         .route("/__api/qr", get(qr_handler))
+        .route("/__api/zip", get(zip_handler))
         .route("/__api/links", get(links_list).post(links_create))
         .route("/__api/links/:id", delete(links_delete))
         .route("/__f/:id/*path", get(root_file_handler))
@@ -1139,6 +1352,7 @@ fn router(ctx: AppCtx) -> Router {
         .route("/s/:token/__api/info", get(share_info))
         .route("/s/:token/__api/list", get(share_list))
         .route("/s/:token/f/*path", get(share_file))
+        .route("/s/:token/zip", get(share_zip))
         .with_state(ctx);
 
     shares.merge(protected)
@@ -1595,6 +1809,109 @@ mod tests {
         assert!(body.contains("<svg"));
         let (s, _, _) = get(&app, "/__api/qr?text=", None).await;
         assert_eq!(s, StatusCode::BAD_REQUEST);
+    }
+
+    async fn get_bytes(app: &Router, uri: &str) -> (StatusCode, HeaderMap, Vec<u8>) {
+        let mut req = axum::http::Request::builder().uri(uri).body(Body::empty()).unwrap();
+        req.extensions_mut()
+            .insert(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 5555))));
+        let res = app.clone().oneshot(req).await.unwrap();
+        let (status, headers) = (res.status(), res.headers().clone());
+        (status, headers, to_bytes(res.into_body(), usize::MAX).await.unwrap().to_vec())
+    }
+
+    /// Every entry of a ZIP: name → file bytes (None for directories).
+    fn unzip(bytes: &[u8]) -> std::collections::BTreeMap<String, Option<Vec<u8>>> {
+        use std::io::Read;
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
+        let mut out = std::collections::BTreeMap::new();
+        for i in 0..archive.len() {
+            let mut f = archive.by_index(i).unwrap();
+            let content = if f.is_dir() {
+                None
+            } else {
+                let mut buf = Vec::new();
+                f.read_to_end(&mut buf).unwrap();
+                Some(buf)
+            };
+            out.insert(f.name().to_string(), content);
+        }
+        out
+    }
+
+    fn uri_path(p: &str) -> String {
+        percent_encoding::utf8_percent_encode(p, percent_encoding::NON_ALPHANUMERIC).to_string()
+    }
+
+    #[tokio::test]
+    async fn folder_downloads_as_streamed_zip() {
+        let (base, db, app) = setup(None);
+        let main = base.join("main");
+        std::fs::create_dir_all(main.join("Ảnh Tết")).unwrap();
+        std::fs::write(main.join("Ảnh Tết").join("ảnh 1.txt"), "xuân").unwrap();
+        // Bigger than one channel chunk, so it really streams in pieces.
+        let big: Vec<u8> = (0..ZIP_CHUNK * 3 + 123).map(|i| (i % 251) as u8).collect();
+        std::fs::write(main.join("sub").join("big.bin"), &big).unwrap();
+        // A link pointing outside the folder must not be followed (needs symlink rights).
+        #[cfg(windows)]
+        let linked = std::os::windows::fs::symlink_dir(base.join("pub"), main.join("link-out")).is_ok();
+        #[cfg(not(windows))]
+        let linked = std::os::unix::fs::symlink(base.join("pub"), main.join("link-out")).is_ok();
+
+        let (s, h, body) = get_bytes(&app, "/__api/zip?root=0&path=/").await;
+        assert_eq!(s, StatusCode::OK);
+        assert_eq!(h[header::CONTENT_TYPE], "application/zip");
+        assert!(h[header::CONTENT_DISPOSITION].to_str().unwrap().contains("filename=\"main.zip\""));
+        let files = unzip(&body);
+        let get = |k: &str| files.get(k).cloned().flatten();
+        assert_eq!(get("main/hello.txt").as_deref(), Some(&b"hello main"[..]));
+        assert_eq!(get("main/sub/deep.txt").as_deref(), Some(&b"deep"[..]));
+        assert_eq!(get("main/Ảnh Tết/ảnh 1.txt").as_deref(), Some("xuân".as_bytes()));
+        assert_eq!(get("main/sub/big.bin"), Some(big));
+        assert!(files.contains_key("main/sub/") && files.contains_key("main/s/abc/"));
+        assert!(!files.keys().any(|k| k.contains("secret") || k.contains("movie")), "{:?}", files.keys());
+        if linked {
+            assert!(!files.keys().any(|k| k.contains("link-out")));
+        }
+        // Modification times survive (instead of the ZIP default, 1980).
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&body)).unwrap();
+        let year = archive.by_name("main/hello.txt").unwrap().last_modified().unwrap().year();
+        assert!(year >= 2024, "year {}", year);
+
+        // A subfolder with a Vietnamese name keeps it, in the archive and the file name.
+        let uri = format!("/__api/zip?root=0&path={}", uri_path("/Ảnh Tết/"));
+        let (s, h, body) = get_bytes(&app, &uri).await;
+        assert_eq!(s, StatusCode::OK);
+        let cd = h[header::CONTENT_DISPOSITION].to_str().unwrap();
+        assert!(cd.contains("filename*=UTF-8''%E1%BA%A2nh%20T%E1%BA%BFt.zip"), "{}", cd);
+        assert_eq!(unzip(&body).keys().cloned().collect::<Vec<_>>(), vec!["Ảnh Tết/ảnh 1.txt"]);
+
+        // Not a folder / outside the root.
+        let (s, _, _) = get_bytes(&app, "/__api/zip?root=0&path=/hello.txt").await;
+        assert_eq!(s, StatusCode::NOT_FOUND);
+        let (s, _, _) = get_bytes(&app, "/__api/zip?root=0&path=/../").await;
+        assert_eq!(s, StatusCode::FORBIDDEN);
+        assert!(db.logs(10).iter().any(|l| l.action == "zip"));
+    }
+
+    #[tokio::test]
+    async fn share_link_folder_zip() {
+        let (base, db, app) = setup(None);
+        let sub = base.join("main").join("sub");
+        let link = db.create_link(&sub, 1, None).unwrap();
+        let (s, _, body) = get_bytes(&app, &format!("/s/{}/zip", link.token)).await;
+        assert_eq!(s, StatusCode::OK);
+        assert_eq!(unzip(&body).keys().cloned().collect::<Vec<_>>(), vec!["sub/deep.txt"]);
+        assert!(db.logs(10).iter().any(|l| l.action == "link_download" && l.detail == "sub (ZIP)"));
+
+        let (s, _, _) = get_bytes(&app, &format!("/s/{}/zip?path=/../", link.token)).await;
+        assert_eq!(s, StatusCode::FORBIDDEN);
+        let file = db.create_link(&base.join("main").join("hello.txt"), 1, None).unwrap();
+        let (s, _, _) = get_bytes(&app, &format!("/s/{}/zip", file.token)).await;
+        assert_eq!(s, StatusCode::BAD_REQUEST);
+        let locked = db.create_link(&sub, 1, Some("1234".into())).unwrap();
+        let (s, _, _) = get_bytes(&app, &format!("/s/{}/zip", locked.token)).await;
+        assert_eq!(s, StatusCode::UNAUTHORIZED);
     }
 
     /// The real Recycle Bin call (tests otherwise use a plain delete). Touches the

@@ -869,6 +869,7 @@
       mkdir: ['📁', 'Tạo thư mục'],
       rename: ['✏️', 'Đổi tên'],
       delete: ['🗑️', 'Chuyển vào Thùng rác'],
+      zip: ['🗜️', 'Tải thư mục (ZIP)'],
       upload: ['⬆️', 'Tải lên'],
       link_create: ['🔗', 'Tạo link'],
       link_delete: ['🗑️', 'Xóa link'],
@@ -884,7 +885,7 @@
       list.innerHTML = logs.map((l) => {
         const [ic, label] = LOG_LABEL[l.action] || ['•', l.action];
         // Paths are long; the full one stays in the tooltip.
-        const shown = ['upload', 'mkdir', 'delete'].includes(l.action) ? basename(l.detail)
+        const shown = ['upload', 'mkdir', 'delete', 'zip'].includes(l.action) ? basename(l.detail)
           : l.action === 'rename' ? l.detail.split(' → ').map(basename).join(' → ')
           : l.detail;
         return `<div class="log-row"><span class="log-ic">${ic}</span><div class="log-main">` +

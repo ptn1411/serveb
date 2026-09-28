@@ -387,6 +387,7 @@
     <h1 id="title">File Browser</h1>
     <p class="subtitle" id="subtitle">// click file to download · click folder to open</p>
     <div class="head-actions" id="headActions">
+      <button class="chip-btn" id="zipHere">🗜️ Tải cả thư mục (ZIP)</button>
       <button class="chip-btn" id="shareHere">🔗 Chia sẻ thư mục này</button>
       <button class="chip-btn" id="linksBtn">📋 Link đã tạo</button>
       <button class="chip-btn" id="logoutBtn" style="display:none">⏻ Đăng xuất</button>
@@ -900,7 +901,7 @@
     sheetItem = f;
     $('asTarget').innerHTML = `<span>${f.isDir ? '📂' : '📄'}</span><span>${esc(f.name)}</span>`;
     const acts = [];
-    if (f.isDir) acts.push(['open', '📂', 'Mở thư mục']);
+    if (f.isDir) acts.push(['open', '📂', 'Mở thư mục'], ['zip', '🗜️', 'Tải cả thư mục (ZIP)']);
     else acts.push(['view', mediaType(getExt(f.name)) ? '👁️' : '📄', 'Xem / mở'], ['dl', '⬇️', 'Tải về']);
     acts.push(['share', '🔗', 'Tạo link chia sẻ']);
     if (perm >= PERM_FULL) acts.push(['rename', '✏️', 'Đổi tên'], ['delete', '🗑️', 'Chuyển vào Thùng rác', 'danger']);
@@ -916,6 +917,7 @@
     $('actSheet').classList.remove('show');
     switch (b.dataset.as) {
       case 'open': navigateTo(itemPath(f)); break;
+      case 'zip': downloadZip(itemPath(f), f.name); break;
       case 'view': onFileClick(f); break;
       case 'dl': {
         const a = document.createElement('a');
@@ -938,6 +940,23 @@
         break;
     }
   });
+
+  // The server streams the archive while it reads the files, so the download starts
+  // right away (no size shown up front) and even very large folders work.
+  function downloadZip(path, name) {
+    const url = SHARE
+      ? `${SHARE_BASE}/zip?path=${encodeURIComponent(path)}`
+      : `/__api/zip?root=${currentRoot}&path=${encodeURIComponent(path)}`;
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = (name || 'thu-muc') + '.zip';
+    document.body.appendChild(a); a.click(); a.remove();
+    toast('Đang tải ZIP… (không nén, giữ nguyên chất lượng)');
+  }
+  $('zipHere').onclick = () => {
+    const parts = currentPath.split('/').filter(Boolean);
+    downloadZip(currentPath, parts.length ? parts[parts.length - 1] : rootName());
+  };
 
   $('mkdirBtn').onclick = async () => {
     const name = await askName('📁 Thư mục mới', '', 'Tạo thư mục', false);
@@ -1357,7 +1376,8 @@
   // ---------------- Start ----------------
   (async function init() {
     if (SHARE) {
-      $('headActions').style.display = 'none';
+      // Recipients only get "download as ZIP", and only for a shared folder.
+      ['shareHere', 'linksBtn', 'logoutBtn', 'zipHere'].forEach((id) => { $(id).style.display = 'none'; });
       $('title').textContent = 'Link chia sẻ';
       $('subtitle').textContent = '// chỉ xem & tải về';
       try {
@@ -1366,6 +1386,7 @@
         const info = await res.json();
         if (res.ok) {
           shareInfo = info;
+          if (info.kind === 'dir') $('zipHere').style.display = '';
           document.title = info.name + ' · namsv';
           $('title').textContent = info.name;
           $('subtitle').textContent = `// link chia sẻ · chỉ xem & tải về · hết hạn ${fmtDate(info.expires_at)}`;
