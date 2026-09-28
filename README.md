@@ -14,6 +14,8 @@ Chọn một thư mục trên máy, bật server, rồi bất kỳ thiết bị 
 - 📂 **Nhiều thư mục công khai** — thêm thư mục ở tab *Công khai*; điện thoại chọn qua lại ngay trên đầu trang. Mỗi thư mục (kể cả thư mục chính) có 3 mức quyền: *Chỉ xem* · *Tải lên* (thêm file, tạo thư mục) · *Toàn quyền* (thêm đổi tên, xóa). Áp dụng ngay, không cần khởi động lại server
 - ✏️ **Quản lý file từ điện thoại** — nút ⋯ trên mỗi dòng: xem, tải về, chia sẻ, đổi tên, xóa. Xóa là **chuyển vào Thùng rác Windows** nên khôi phục được
 - 🗜️ **Tải cả thư mục thành ZIP** — cho thư mục đang xem, từng thư mục con, và cả người nhận link chia sẻ thư mục. ZIP được stream ngay khi đọc file (không tạo file tạm, không giới hạn dung lượng), không nén (ảnh/video giữ nguyên, tải nhanh), giữ tên tiếng Việt và ngày sửa file
+- 🖼️ **Xem ảnh dạng lưới** — ảnh thu nhỏ do server tạo (~10–30 KB thay vì cả MB, tự xoay theo EXIF như ảnh iPhone, lưu cache trong thư mục cache của app, tối đa 300 MB). Tự chuyển sang lưới khi thư mục chủ yếu là ảnh; bấm ảnh mở ngay bản thu nhỏ rồi thay bằng ảnh gốc. Hỗ trợ JPG/PNG/GIF/WebP/BMP (HEIC chỉ hiện biểu tượng; Safari trên iPhone vẫn xem được ảnh gốc)
+- ↕️ **Sắp xếp** theo tên (số thông minh: IMG_2 trước IMG_10), ngày sửa, dung lượng — nhớ lựa chọn trên từng máy
 - ▦ **Mã QR** — QR cho địa chỉ LAN (iPhone quét bằng Camera là vào) và cho từng link chia sẻ
 - 🔑 **Giữ đăng nhập 30 ngày** — mỗi thiết bị một phiên, không bị đăng xuất khi đổi thư mục/cổng hay tắt-bật server; có nút *Đăng xuất* trên web và danh sách *Thiết bị đã đăng nhập* trong app để đăng xuất từng máy. Đổi mã PIN sẽ đăng xuất tất cả
 - 🔗 **Link chia sẻ tạm thời** — cho 1 file hoặc 1 thư mục, có thời hạn (1 giờ → 30 ngày) và mật khẩu 4 số. Người nhận chỉ xem & tải về. Nhập sai 5 lần thì link tự khóa (mở khóa lại được trong app)
@@ -76,6 +78,7 @@ Server Rust mở HTTP trên `0.0.0.0:<port>`. `root=0` là thư mục chính, c�
 | `POST /__api/logout` | Đăng xuất thiết bị hiện tại |
 | `/__api/qr?text=` | Ảnh QR (SVG) |
 | `/__api/zip?root=&path=` · `/s/<mã>/zip?path=` | Tải thư mục thành ZIP (stream) |
+| `/__thumb/<root>/<đường dẫn>` · `/s/<mã>/thumb/<đường dẫn>` | Ảnh thu nhỏ JPEG (cache) |
 | `/__api/links` | Tạo (`POST`) / liệt kê (`GET`) / xóa (`DELETE /__api/links/<id>`) link chia sẻ |
 | `/s/<mã>` | Trang link chia sẻ — **không** cần PIN chung, chỉ cần mật khẩu riêng của link |
 | `/*` | Tải file trong thư mục chính (giữ tương thích link cũ) |

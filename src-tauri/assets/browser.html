@@ -114,6 +114,56 @@
 
     .file-list { display: flex; flex-direction: column; gap: 6px; }
 
+    /* ---- Sort + list/grid switch ---- */
+    .viewbar { display: flex; gap: 8px; align-items: center; justify-content: space-between; margin-bottom: 14px; flex-wrap: wrap; }
+    .viewbar select {
+      font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--text); cursor: pointer;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; outline: none;
+    }
+    .viewbar select:focus { border-color: var(--accent); }
+    .view-toggle { display: flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+    .view-toggle button {
+      font-family: 'JetBrains Mono', monospace; font-size: 11px; padding: 8px 12px; cursor: pointer;
+      background: var(--surface); color: var(--muted); border: none;
+    }
+    .view-toggle button + button { border-left: 1px solid var(--border); }
+    .view-toggle button.active { background: var(--accent); color: #fff; }
+
+    /* ---- Photo grid ---- */
+    .file-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+    .tile {
+      position: relative; aspect-ratio: 1 / 1; border-radius: 10px; overflow: hidden; cursor: pointer;
+      background: var(--surface); border: 1px solid var(--border);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      animation: slideIn 0.3s ease both; -webkit-tap-highlight-color: transparent;
+    }
+    .tile:hover { border-color: var(--accent); }
+    .tile img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: var(--hover); }
+    .tile.photo { border: none; }
+    .tile .t-icon { font-size: 34px; line-height: 1; }
+    .tile .t-name {
+      font-size: 10px; margin-top: 8px; padding: 0 8px; max-width: 100%; color: var(--text);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .tile .t-sub { font-size: 9px; color: var(--muted); margin-top: 3px; }
+    .tile .t-more {
+      position: absolute; top: 5px; right: 5px; z-index: 2; width: 28px; height: 28px; padding: 0;
+      display: grid; place-items: center; border: none; border-radius: 8px; cursor: pointer;
+      background: rgba(10,10,15,.55); color: #fff; backdrop-filter: blur(3px);
+    }
+    .tile .t-more svg { width: 14px; height: 14px; }
+    .tile .t-badge {
+      position: absolute; left: 6px; bottom: 6px; z-index: 2; font-size: 9px; font-weight: 700; letter-spacing: .05em;
+      padding: 2px 6px; border-radius: 5px; background: rgba(0,0,0,.6); color: #fff; text-transform: uppercase;
+    }
+    .file-icon.has-thumb { padding: 0; overflow: hidden; background: var(--hover); }
+    .file-icon.has-thumb img { width: 100%; height: 100%; object-fit: cover; }
+    @media (max-width: 620px) {
+      .file-grid { grid-template-columns: repeat(3, 1fr); gap: 4px; }
+      .tile { border-radius: 6px; }
+      .viewbar select { flex: 1; }
+    }
+
     .file-item {
       display: flex; align-items: center; gap: 16px; padding: 14px 18px;
       background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
@@ -414,6 +464,21 @@
     <button class="chip-btn newdir-btn" id="mkdirBtn" style="display:none">📁＋ Thư mục mới</button>
   </div>
 
+  <div class="viewbar">
+    <select id="sortSel" aria-label="Sắp xếp">
+      <option value="name_asc">↑ Tên A → Z</option>
+      <option value="name_desc">↓ Tên Z → A</option>
+      <option value="date_desc">🕘 Mới nhất</option>
+      <option value="date_asc">🕘 Cũ nhất</option>
+      <option value="size_desc">⬛ Lớn nhất</option>
+      <option value="size_asc">▫ Nhỏ nhất</option>
+    </select>
+    <div class="view-toggle" id="viewToggle">
+      <button data-view="list" title="Dạng danh sách">☰ Danh sách</button>
+      <button data-view="grid" title="Dạng lưới ảnh">▦ Lưới</button>
+    </div>
+  </div>
+
   <div id="fileList" class="file-list">
     <div class="loader"><span></span><span></span><span></span></div>
   </div>
@@ -641,6 +706,7 @@
     currentPath = s.path;
     activeFilter = 'all';
     $('search').value = '';
+    $('fileList').className = 'file-list';
     $('fileList').innerHTML = LOADER;
     renderRoots();
     loadFiles(currentPath);
@@ -738,8 +804,8 @@
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
       if (reqRoot !== currentRoot || path !== currentPath) return; // user already moved on
 
-      // API returns { items: [{name, isDir, size}], perm } — already sorted
-      const items = (data.items || []).filter(f => f.name !== '..' && !f.name.startsWith('.'));
+      // API returns { items: [{name, isDir, size, mtime}], perm }
+      const items = sortItems((data.items || []).filter(f => f.name !== '..' && !f.name.startsWith('.')));
 
       allDirs = items.filter(f => f.isDir);
       allFiles = items.filter(f => !f.isDir);
@@ -754,6 +820,7 @@
       renderItems(allItems);
       updateStats(allFiles, allDirs);
     } catch (err) {
+      $('fileList').className = 'file-list';
       $('fileList').innerHTML = `
         <div class="state-msg">
           <div class="icon">⚠️</div>
@@ -769,6 +836,67 @@
     const parts = name.split('.');
     return parts.length > 1 ? parts.pop().toLowerCase() : '';
   }
+
+  // ---------------- Sort + list/grid (remembered per browser) ----------------
+  const pref = {
+    get(k, d) { try { return localStorage.getItem('namsv.' + k) || d; } catch (e) { return d; } },
+    set(k, v) { try { localStorage.setItem('namsv.' + k, v); } catch (e) {} },
+  };
+  let sortMode = pref.get('sort', 'name_asc');
+  let viewPref = pref.get('view', 'auto'); // 'auto' = grid when the folder is mostly photos
+
+  const nameCmp = (a, b) => a.name.localeCompare(b.name, 'vi', { numeric: true, sensitivity: 'base' });
+  // Folders stay on top; "IMG_2" sorts before "IMG_10".
+  function sortItems(items) {
+    const [key, dir] = sortMode.split('_');
+    const sign = dir === 'desc' ? -1 : 1;
+    return [...items].sort((a, b) => {
+      if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+      if (key === 'date') return sign * ((a.mtime || 0) - (b.mtime || 0)) || nameCmp(a, b);
+      if (key === 'size') return a.isDir ? nameCmp(a, b) : sign * ((a.size || 0) - (b.size || 0)) || nameCmp(a, b);
+      return sign * nameCmp(a, b);
+    });
+  }
+
+  // Images the server can shrink; SVGs are small enough to show as they are.
+  const THUMB_EXT = ['jpg', 'jpeg', 'jfif', 'png', 'gif', 'webp', 'bmp'];
+  const isImage = (f) => !f.isDir && mediaType(getExt(f.name)) === 'image';
+  function thumbUrl(f) {
+    const ext = getExt(f.name);
+    const rel = encPath(currentPath + f.name);
+    if (THUMB_EXT.includes(ext)) {
+      return (SHARE ? `${SHARE_BASE}/thumb` : `/__thumb/${currentRoot}`) + `${rel}?v=${f.mtime || 0}`;
+    }
+    return ext === 'svg' ? fileUrl(currentPath + f.name) : null;
+  }
+
+  function effectiveView() {
+    if (viewPref !== 'auto') return viewPref;
+    const photos = allFiles.filter(isImage).length;
+    return photos >= 4 && photos * 2 >= allFiles.length ? 'grid' : 'list';
+  }
+  function syncViewControls() {
+    $('sortSel').value = sortMode;
+    const v = effectiveView();
+    $('viewToggle').querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.view === v));
+  }
+  $('sortSel').onchange = () => {
+    sortMode = $('sortSel').value;
+    pref.set('sort', sortMode);
+    allItems = sortItems(allItems);
+    allDirs = allItems.filter(f => f.isDir);
+    allFiles = allItems.filter(f => !f.isDir);
+    filterFiles();
+  };
+  $('viewToggle').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-view]');
+    if (!b) return;
+    viewPref = b.dataset.view;
+    pref.set('view', viewPref);
+    filterFiles();
+  });
+
+  const fmtDay = (ts) => ts ? new Date(ts * 1000).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '';
 
   function formatSize(bytes) {
     if (typeof bytes !== 'number' || bytes === 0) return '—';
@@ -833,56 +961,103 @@
   function renderItems(items) {
     lastRendered = items;
     const container = $('fileList');
+    const grid = effectiveView() === 'grid';
+    syncViewControls();
+    container.className = grid ? 'file-grid' : 'file-list';
     if (items.length === 0) {
-      container.innerHTML = '<div class="state-msg"><div class="icon">🔍</div><p>No files found.</p></div>';
+      container.innerHTML = '<div class="state-msg" style="grid-column:1/-1"><div class="icon">🔍</div><p>No files found.</p></div>';
       return;
     }
-
-    const shareBtn = SHARE ? '' : `<button class="dl-btn" data-act="more" title="Chia sẻ, đổi tên, xóa…">${MORE_SVG}</button>`;
-    container.innerHTML = items.map((f, i) => {
-      const name = esc(f.name);
-      if (f.isDir) {
-        return `
-          <div class="file-item is-folder" data-i="${i}" style="animation-delay:${i * 0.04}s">
-            <span class="file-icon" style="background:#f59e0b18;color:#fbbf24;font-size:18px">📂</span>
-            <div class="file-meta">
-              <div class="file-name">${name}</div>
-              <div class="file-info"><span style="color:#fbbf24">folder</span></div>
-            </div>
-            ${shareBtn}
-            <span class="folder-arrow">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
-            </span>
-          </div>`;
-      }
-      const ext = getExt(f.name);
-      const icon = iconMap[ext] || iconMap.default;
-      const extClass = ext ? `ext-${esc(ext)}` : 'ext-default';
-      const isMedia = !!mediaType(ext);
-      return `
-        <div class="file-item${isMedia ? ' media' : ''}" data-i="${i}" style="animation-delay:${i * 0.04}s">
-          <span class="file-icon ${extClass}">${icon}</span>
-          <div class="file-meta">
-            <div class="file-name">${name}</div>
-            <div class="file-info">
-              ${ext ? `<span class="file-ext ${extClass}">${esc(ext)}</span>` : ''}
-              <span>${formatSize(f.size)}</span>
-            </div>
-          </div>
-          ${shareBtn}
-          <a class="dl-btn" data-act="dl" href="${esc(fileUrl(currentPath + f.name))}" download="${name}" title="Download">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
-              <polyline points="7 10 12 15 17 10"/>
-              <line x1="12" y1="15" x2="12" y2="3"/>
-            </svg>
-          </a>
-        </div>`;
-    }).join('');
+    // Stagger the entry animation, but only for the first few rows.
+    const delay = (i) => `animation-delay:${Math.min(i, 15) * 0.03}s`;
+    container.innerHTML = items.map((f, i) => (grid ? tileHtml(f, i, delay(i)) : rowHtml(f, i, delay(i)))).join('');
   }
 
+  function rowHtml(f, i, delay) {
+    const name = esc(f.name);
+    const moreBtn = SHARE ? '' : `<button class="dl-btn" data-act="more" title="Chia sẻ, đổi tên, xóa…">${MORE_SVG}</button>`;
+    if (f.isDir) {
+      return `
+        <div class="file-item is-folder" data-i="${i}" style="${delay}">
+          <span class="file-icon" style="background:#f59e0b18;color:#fbbf24;font-size:18px">📂</span>
+          <div class="file-meta">
+            <div class="file-name">${name}</div>
+            <div class="file-info"><span style="color:#fbbf24">folder</span><span>${fmtDay(f.mtime)}</span></div>
+          </div>
+          ${moreBtn}
+          <span class="folder-arrow">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+          </span>
+        </div>`;
+    }
+    const ext = getExt(f.name);
+    const extClass = ext ? `ext-${esc(ext)}` : 'ext-default';
+    const thumb = thumbUrl(f);
+    const icon = thumb
+      ? `<span class="file-icon has-thumb"><img loading="lazy" decoding="async" alt="" src="${esc(thumb)}"></span>`
+      : `<span class="file-icon ${extClass}">${iconMap[ext] || iconMap.default}</span>`;
+    return `
+      <div class="file-item${mediaType(ext) ? ' media' : ''}" data-i="${i}" style="${delay}">
+        ${icon}
+        <div class="file-meta">
+          <div class="file-name">${name}</div>
+          <div class="file-info">
+            ${ext ? `<span class="file-ext ${extClass}">${esc(ext)}</span>` : ''}
+            <span>${formatSize(f.size)}</span>
+            <span>${fmtDay(f.mtime)}</span>
+          </div>
+        </div>
+        ${moreBtn}
+        <a class="dl-btn" data-act="dl" href="${esc(fileUrl(currentPath + f.name))}" download="${name}" title="Download">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+        </a>
+      </div>`;
+  }
+
+  function tileHtml(f, i, delay) {
+    const name = esc(f.name);
+    const more = SHARE ? '' : `<button class="t-more" data-act="more" title="Chia sẻ, đổi tên, xóa…">${MORE_SVG}</button>`;
+    if (f.isDir) {
+      return `<div class="tile" data-i="${i}" style="${delay}" title="${name}">${more}
+        <span class="t-icon">📂</span><span class="t-name">${name}</span></div>`;
+    }
+    const ext = getExt(f.name);
+    const thumb = thumbUrl(f);
+    if (thumb) {
+      return `<div class="tile photo" data-i="${i}" style="${delay}" title="${name}">${more}
+        <img loading="lazy" decoding="async" alt="" src="${esc(thumb)}"></div>`;
+    }
+    const type = mediaType(ext);
+    return `<div class="tile" data-i="${i}" style="${delay}" title="${name}">${more}
+      <span class="t-icon">${iconMap[ext] || iconMap.default}</span>
+      <span class="t-name">${name}</span>
+      <span class="t-sub">${formatSize(f.size)}</span>
+      ${type === 'video' || ext === 'heic' || ext === 'heif' ? `<span class="t-badge">${esc(ext)}</span>` : ''}</div>`;
+  }
+
+  // A thumbnail that can't be made (corrupt file, odd format) falls back to the icon.
+  $('fileList').addEventListener('error', (e) => {
+    const img = e.target;
+    if (img.tagName !== 'IMG') return;
+    const holder = img.closest('.tile, .file-icon');
+    const f = holder && lastRendered[+(holder.closest('[data-i]') || {}).dataset?.i];
+    if (!holder || !f) return;
+    const icon = iconMap[getExt(f.name)] || iconMap.default;
+    if (holder.classList.contains('tile')) {
+      holder.classList.remove('photo');
+      img.outerHTML = `<span class="t-icon">${icon}</span><span class="t-name">${esc(f.name)}</span>`;
+    } else {
+      holder.classList.remove('has-thumb');
+      holder.textContent = icon;
+    }
+  }, true);
+
   $('fileList').addEventListener('click', (e) => {
-    const row = e.target.closest('.file-item');
+    const row = e.target.closest('[data-i]');
     if (!row) return;
     const f = lastRendered[+row.dataset.i];
     if (!f) return;
@@ -1027,7 +1202,8 @@
 
   // ---------------- Media viewer (preview images / video / audio) ----------------
   const MEDIA_EXT = {
-    image: ['jpg','jpeg','png','gif','webp','svg','bmp','avif','ico','jfif'],
+    // heic/heif: Safari on iPhone shows them natively; other browsers fall back to "download".
+    image: ['jpg','jpeg','png','gif','webp','svg','bmp','avif','ico','jfif','heic','heif'],
     video: ['mp4','webm','ogv','mov','m4v','mkv'],
     audio: ['mp3','wav','flac','ogg','m4a','aac','opus'],
   };
@@ -1044,7 +1220,7 @@
     // Collect all previewable files currently shown, for prev/next navigation
     viewerList = (lastRendered || [])
       .filter(x => !x.isDir && mediaType(getExt(x.name)))
-      .map(x => ({ url: fileUrl(currentPath + x.name), name: x.name, type: mediaType(getExt(x.name)) }));
+      .map(x => ({ url: fileUrl(currentPath + x.name), thumb: thumbUrl(x), name: x.name, type: mediaType(getExt(x.name)) }));
     viewerIdx = viewerList.findIndex(x => x.name === f.name);
     if (viewerIdx < 0) { viewerList = [{ url, name: f.name, type: mediaType(getExt(f.name)) }]; viewerIdx = 0; }
     showViewer();
@@ -1059,17 +1235,36 @@
     dl.href = it.url; dl.setAttribute('download', it.name);
 
     const src = esc(it.url);
-    if (it.type === 'image') {
-      stage.innerHTML = `<img src="${src}" alt="">`;
-    } else if (it.type === 'video') {
-      stage.innerHTML = `<video src="${src}" controls autoplay playsinline></video>`;
-    } else {
-      stage.innerHTML = `<audio src="${src}" controls autoplay></audio>`;
-    }
-    const m = stage.querySelector('img,video,audio');
-    if (m) m.onerror = () => {
+    const unplayable = () => {
       stage.innerHTML = '<div class="v-err">Trình duyệt không phát được định dạng này.<br>Bấm <b>⬇ Tải</b> để tải về xem.</div>';
     };
+    if (it.type === 'image') {
+      // Show the (cached, tiny) thumbnail at once, then swap in the full photo when it
+      // has arrived — flicking through photos stays snappy over Wi-Fi.
+      const img = new Image();
+      img.alt = '';
+      let onThumb = !!it.thumb;
+      img.onerror = () => { if (onThumb) { onThumb = false; img.src = it.url; } else unplayable(); };
+      // Stretch the thumbnail to the size the full photo will take, so nothing jumps.
+      img.onload = () => {
+        if (!onThumb) { img.style.width = img.style.height = ''; return; }
+        const fit = Math.min(($('vBody').clientWidth - 32) / img.naturalWidth, (innerHeight * 0.82) / img.naturalHeight);
+        img.style.width = Math.round(img.naturalWidth * fit) + 'px';
+        img.style.height = Math.round(img.naturalHeight * fit) + 'px';
+      };
+      img.src = it.thumb || it.url;
+      stage.replaceChildren(img);
+      if (it.thumb) {
+        const full = new Image();
+        full.onload = () => { if (onThumb && viewerList[viewerIdx] === it) { onThumb = false; img.src = it.url; } };
+        full.src = it.url;
+      }
+    } else {
+      stage.innerHTML = it.type === 'video'
+        ? `<video src="${src}" controls autoplay playsinline></video>`
+        : `<audio src="${src}" controls autoplay></audio>`;
+      stage.querySelector('video,audio').onerror = unplayable;
+    }
 
     const multi = viewerList.length > 1;
     $('vPrev').style.display = multi ? 'grid' : 'none';

@@ -15,6 +15,7 @@
 
 use crate::db::{self, Db, Link};
 use crate::guard::{self, Lock, LoginGuard, Outcome};
+use crate::thumbs::{ThumbError, Thumbs};
 use axum::{
     body::{Body, Bytes},
     extract::{ConnectInfo, DefaultBodyLimit, Path as UrlPath, Query, Request, State},
@@ -63,6 +64,8 @@ struct AppCtx {
     db: Arc<Db>,
     /// Wrong-PIN limiter; owned by the app so the control window can show/clear it.
     guard: Arc<LoginGuard>,
+    /// Photo-grid thumbnails (disk cache + decode limiter).
+    thumbs: Arc<Thumbs>,
     notify: Notify,
 }
 
@@ -94,6 +97,17 @@ struct Item {
     is_dir: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     size: Option<u64>,
+    /// Last modified, unix seconds (for "newest first" and the date column).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mtime: Option<i64>,
+}
+
+fn mtime_of(meta: &std::fs::Metadata) -> Option<i64> {
+    meta.modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .map(|d| d.as_secs() as i64)
 }
 
 #[derive(Serialize)]
@@ -308,12 +322,10 @@ fn read_items(dir: &Path) -> Result<Vec<Item>, HttpError> {
         };
         let name = entry.file_name().to_string_lossy().to_string();
         let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
-        let size = if is_dir {
-            None
-        } else {
-            entry.metadata().ok().map(|m| m.len())
-        };
-        items.push(Item { name, is_dir, size });
+        let meta = entry.metadata().ok();
+        let size = if is_dir { None } else { meta.as_ref().map(|m| m.len()) };
+        let mtime = meta.as_ref().and_then(mtime_of);
+        items.push(Item { name, is_dir, size, mtime });
     }
 
     // Directories first, then case-insensitive alphabetical — matches the Node version.
@@ -898,6 +910,39 @@ async fn zip_handler(
     zip_response(dir)
 }
 
+// ---------------- Thumbnails (photo grid) ----------------
+
+fn thumb_reply(result: Result<Vec<u8>, ThumbError>) -> Response {
+    match result {
+        // The page asks for `?v=<mtime>`, so a cached thumbnail can never go stale.
+        Ok(bytes) => (
+            [
+                (CONTENT_TYPE, "image/jpeg"),
+                (CACHE_CONTROL, "private, max-age=31536000, immutable"),
+            ],
+            bytes,
+        )
+            .into_response(),
+        Err(ThumbError::NotFound) => json_err(StatusCode::NOT_FOUND, "not found"),
+        Err(ThumbError::Unsupported) => {
+            json_err(StatusCode::UNSUPPORTED_MEDIA_TYPE, "Không tạo được ảnh thu nhỏ cho định dạng này")
+        }
+        Err(ThumbError::TooLarge) => json_err(StatusCode::PAYLOAD_TOO_LARGE, "Ảnh quá lớn"),
+        Err(ThumbError::Failed(e)) => json_err(StatusCode::UNPROCESSABLE_ENTITY, e),
+    }
+}
+
+/// `GET /__thumb/<root>/<path>` — small JPEG preview of an image.
+async fn thumb_handler(
+    State(ctx): State<AppCtx>,
+    UrlPath((id, rel)): UrlPath<(i64, String)>,
+) -> Response {
+    match root_of(&ctx, id).and_then(|root| safe_join(&root.path, &rel)) {
+        Ok(path) => thumb_reply(ctx.thumbs.get(&path).await),
+        Err(e) => from_err(e),
+    }
+}
+
 // ---------------- QR codes ----------------
 
 /// SVG QR code for `text` — the LAN address or a share link, to scan with a phone.
@@ -1138,6 +1183,7 @@ async fn share_list(
                 name: link.name.clone(),
                 is_dir: false,
                 size: Some(m.len()),
+                mtime: mtime_of(&m),
             }]),
             _ => Err((StatusCode::NOT_FOUND, "File không còn tồn tại".to_string())),
         }
@@ -1195,6 +1241,27 @@ async fn share_file(
         ctx.log(&client_ip(&addr), "link_download", &detail);
     }
     serve_file(path, req).await
+}
+
+/// `GET /s/<token>/thumb/<path>` — thumbnail inside a shared folder (or of a shared file).
+async fn share_thumb(
+    State(ctx): State<AppCtx>,
+    UrlPath((token, rel)): UrlPath<(String, String)>,
+    headers: HeaderMap,
+) -> Response {
+    let link = match share_api_access(&ctx, &token, &headers) {
+        Ok(l) => l,
+        Err(resp) => return resp,
+    };
+    let path = if link.kind == "file" {
+        PathBuf::from(&link.target)
+    } else {
+        match safe_join(Path::new(&link.target), &rel) {
+            Ok(p) => p,
+            Err(e) => return from_err(e),
+        }
+    };
+    thumb_reply(ctx.thumbs.get(&path).await)
 }
 
 /// `GET /s/<token>/zip?path=<dir>` — a shared folder (or a subfolder of it) as ZIP.
@@ -1269,6 +1336,7 @@ pub async fn start(
     pin: Option<String>,
     db: Arc<Db>,
     guard: Arc<LoginGuard>,
+    thumbs: Arc<Thumbs>,
     notify: Notify,
 ) -> Result<RunningServer, String> {
     if !dir.is_dir() {
@@ -1298,6 +1366,7 @@ pub async fn start(
         pin,
         db,
         guard,
+        thumbs,
         notify,
     });
 
@@ -1335,6 +1404,7 @@ fn router(ctx: AppCtx) -> Router {
         .route("/__api/delete", post(delete_handler))
         .route("/__api/qr", get(qr_handler))
         .route("/__api/zip", get(zip_handler))
+        .route("/__thumb/:id/*path", get(thumb_handler))
         .route("/__api/links", get(links_list).post(links_create))
         .route("/__api/links/:id", delete(links_delete))
         .route("/__f/:id/*path", get(root_file_handler))
@@ -1353,6 +1423,7 @@ fn router(ctx: AppCtx) -> Router {
         .route("/s/:token/__api/list", get(share_list))
         .route("/s/:token/f/*path", get(share_file))
         .route("/s/:token/zip", get(share_zip))
+        .route("/s/:token/thumb/*path", get(share_thumb))
         .with_state(ctx);
 
     shares.merge(protected)
@@ -1396,6 +1467,7 @@ mod tests {
             pin: pin.map(String::from),
             db: db.clone(),
             guard: guard.clone(),
+            thumbs: Arc::new(Thumbs::new(main.with_file_name("thumb-cache"))),
             notify: Arc::new(|_| {}),
         })
     }
@@ -1892,6 +1964,41 @@ mod tests {
         let (s, _, _) = get_bytes(&app, "/__api/zip?root=0&path=/../").await;
         assert_eq!(s, StatusCode::FORBIDDEN);
         assert!(db.logs(10).iter().any(|l| l.action == "zip"));
+    }
+
+    #[tokio::test]
+    async fn thumbnails_and_dates_for_the_photo_grid() {
+        let (base, db, app) = setup(None);
+        let main = base.join("main");
+        // 1200×900 stored sideways (EXIF 6) → shown as 900×1200 → thumbnail 270×360.
+        std::fs::write(main.join("IMG_0001.jpg"), crate::thumbs::tests::jpeg(1200, 900, Some(6))).unwrap();
+
+        let (_, _, body) = get(&app, "/__api/list?root=0&path=/", None).await;
+        let list: serde_json::Value = serde_json::from_str(&body).unwrap();
+        let items = list["items"].as_array().unwrap();
+        assert!(items.iter().all(|i| i["mtime"].as_i64().unwrap_or(0) > 1_600_000_000), "{}", body);
+
+        let (s, h, bytes) = get_bytes(&app, "/__thumb/0/IMG_0001.jpg?v=1").await;
+        assert_eq!(s, StatusCode::OK);
+        assert_eq!(h[header::CONTENT_TYPE], "image/jpeg");
+        assert!(h[header::CACHE_CONTROL].to_str().unwrap().contains("immutable"));
+        let img = image::load_from_memory(&bytes).unwrap();
+        assert_eq!((img.width(), img.height()), (270, 360));
+
+        let (s, _, _) = get_bytes(&app, "/__thumb/0/hello.txt").await;
+        assert_eq!(s, StatusCode::UNSUPPORTED_MEDIA_TYPE);
+        let (s, _, _) = get_bytes(&app, "/__thumb/0/..%2Fsecret.txt").await;
+        assert_eq!(s, StatusCode::FORBIDDEN);
+
+        // Recipients of a folder link get thumbnails too — but only with access.
+        let open = db.create_link(&main, 1, None).unwrap();
+        let (s, _, _) = get_bytes(&app, &format!("/s/{}/thumb/IMG_0001.jpg", open.token)).await;
+        assert_eq!(s, StatusCode::OK);
+        let (s, _, _) = get_bytes(&app, &format!("/s/{}/thumb/..%2Fsecret.txt", open.token)).await;
+        assert_eq!(s, StatusCode::FORBIDDEN);
+        let locked = db.create_link(&main, 1, Some("1234".into())).unwrap();
+        let (s, _, _) = get_bytes(&app, &format!("/s/{}/thumb/IMG_0001.jpg", locked.token)).await;
+        assert_eq!(s, StatusCode::UNAUTHORIZED);
     }
 
     #[tokio::test]

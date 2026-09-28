@@ -4,6 +4,7 @@
 mod db;
 mod guard;
 mod server;
+mod thumbs;
 
 use db::Db;
 use guard::LoginGuard;
@@ -72,6 +73,7 @@ struct AppState {
     db: Arc<Db>,
     /// Wrong-PIN limiter; lives here (not in the server) so it survives restarts.
     guard: Arc<LoginGuard>,
+    thumbs: Arc<thumbs::Thumbs>,
 }
 
 fn load_config(path: &PathBuf) -> Config {
@@ -225,7 +227,7 @@ fn emit_status(app: &AppHandle) {
 // ---------- Core start/stop (shared by commands and tray) ----------
 
 async fn do_start(app: &AppHandle) -> Result<(), String> {
-    let (dir, port, pin, db, guard) = {
+    let (dir, port, pin, db, guard, thumbs) = {
         let state = app.state::<AppState>();
         let cfg = state.config.lock().unwrap();
         (
@@ -234,6 +236,7 @@ async fn do_start(app: &AppHandle) -> Result<(), String> {
             cfg.pin.clone(),
             state.db.clone(),
             state.guard.clone(),
+            state.thumbs.clone(),
         )
     };
 
@@ -253,7 +256,7 @@ async fn do_start(app: &AppHandle) -> Result<(), String> {
             let _ = emitter.emit("db-changed", what);
         }
     });
-    let running = server::start(dir, port, pin, db, guard, notify).await?;
+    let running = server::start(dir, port, pin, db, guard, thumbs, notify).await?;
     {
         let state = app.state::<AppState>();
         *state.server.lock().unwrap() = Some(running);
@@ -632,6 +635,11 @@ fn main() {
             // Database lives next to config.json. If it can't be opened (locked, corrupt)
             // keep the app usable with an in-memory one rather than refusing to start.
             let db_path = config_path.with_file_name("namsv.db");
+            let thumbs_dir = app
+                .path()
+                .app_cache_dir()
+                .map(|d| d.join("thumbs"))
+                .unwrap_or_else(|_| std::env::temp_dir().join("namsv-thumbs"));
             let db = Db::open(&db_path)
                 .or_else(|e| {
                     eprintln!("cannot open {}: {} — using in-memory DB", db_path.display(), e);
@@ -645,7 +653,10 @@ fn main() {
                 config_path: Mutex::new(config_path),
                 db: Arc::new(db),
                 guard: Arc::new(LoginGuard::default()),
+                thumbs: Arc::new(thumbs::Thumbs::new(thumbs_dir.clone())),
             });
+            // Keep the thumbnail cache within budget without delaying startup.
+            std::thread::spawn(move || thumbs::prune(&thumbs_dir, thumbs::CACHE_MAX_BYTES));
 
             // ----- System tray -----
             let mi_open = MenuItem::with_id(app, "open", "Bảng điều khiển", true, None::<&str>)?;
